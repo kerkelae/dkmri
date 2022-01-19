@@ -145,3 +145,36 @@ def test__params_to_W():
     )
     W = dkmri._params_to_W(params)
     npt.assert_almost_equal(W, desired_W)
+
+
+def test__adc():
+    np.random.seed(SEED)
+    D = dkmri._params_to_D(params)
+    for _ in range(100):
+        v = np.random.random((1, 3)) - 0.5
+        v /= np.linalg.norm(v)
+        desired_adc = (v @ D @ v.T)[0]
+        adc = np.asarray(dkmri._adc(params, v))
+        npt.assert_almost_equal(adc, desired_adc)
+        vs = np.vstack((v, v))
+        adcs = np.asarray(dkmri._adc(params, vs))
+        npt.assert_almost_equal(adcs[0], adc)
+        npt.assert_almost_equal(adcs[1], adc)
+
+
+def test__md():
+    desired_md = 0.8419605533333335
+    md = dkmri._md(params)
+    npt.assert_almost_equal(md, desired_md)
+
+
+def test__ad():
+    desired_ad = 1.2839527280964818
+    ad = dkmri._ad(params)
+    npt.assert_almost_equal(ad, desired_ad)
+
+
+def test__rd():
+    desired_rd = 0.6209644659517595
+    rd = dkmri._rd(params)
+    npt.assert_almost_equal(rd, desired_rd)

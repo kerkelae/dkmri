@@ -1,6 +1,12 @@
 """Diffusion kurtosis magnetic resonance imaging."""
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+
+
+jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_platform_name", "cpu")
 
 # Parameter array elements are:
 #
@@ -192,3 +198,94 @@ def _params_to_W(params):
     MD[MD == 0] = np.nan  # To avoid warnings due to division by zero
     W /= MD ** 2
     return W
+
+
+@jax.jit
+def _adc(params, vs):
+    """Compute apparent diffusion coefficients along unit vectors vs.
+
+    Parameters
+    ----------
+    params : numpy.ndarray or jaxlib.xla_extension.DeviceArray
+        Floating-point array with shape (22,).
+    vs : numpy.ndarray or jaxlib.xla_extension.DeviceArray
+        Floating-point array with shape (number of directions, 3).
+
+    Returns
+    -------
+    jaxlib.xla_extension.DeviceArray
+    """
+    return (
+        vs[:, 0] * vs[:, 0] * params[1]
+        + vs[:, 1] * vs[:, 1] * params[2]
+        + vs[:, 2] * vs[:, 2] * params[3]
+        + 2 * vs[:, 0] * vs[:, 1] * params[4]
+        + 2 * vs[:, 0] * vs[:, 2] * params[5]
+        + 2 * vs[:, 1] * vs[:, 2] * params[6]
+    )
+
+
+def _md(params, mask=None):
+    """Compute mean diffusivity.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    md = np.zeros(mask.shape)
+    md[mask] = np.mean(evals, axis=1)
+    return md
+
+
+def _ad(params, mask=None):
+    """Compute axial diffusivity.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    ad = np.zeros(mask.shape)
+    ad[mask] = evals[:, 2]
+    return ad
+
+
+def _rd(params, mask=None):
+    """Compute radial diffusivity.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    rd = np.zeros(mask.shape)
+    rd[mask] = np.mean(evals[:, 0:2], axis=1)
+    return rd
