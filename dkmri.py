@@ -1,7 +1,10 @@
 """Diffusion kurtosis magnetic resonance imaging."""
 
+import argparse
+
 import jax
 import jax.numpy as jnp
+import nibabel as nib
 import numpy as np
 
 
@@ -532,3 +535,97 @@ def _ols_fit(data, design_matrix, mask=None):
         @ np.log(data[mask])[..., np.newaxis]
     )[..., 0]
     return params
+
+
+if __name__ == "__main__":
+
+    # Parse arguments
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Estimate diffusion and kurtosis tensors, and compute parameter maps."
+        )
+    )
+    parser.add_argument(
+        "data", help="path of a NIfTI file with diffusion-weighted data.",
+    )
+    parser.add_argument(
+        "bvals", help="path of a text file with b-values in units of s/mm^2.",
+    )
+    parser.add_argument(
+        "bvecs", help="path of a text file with b-vectors.",
+    )
+    parser.add_argument(
+        "-mask",
+        help=(
+            "path of a NIfTI file with a binary mask definining the voxels where to "
+            "estimate the tensors."
+        ),
+    )
+    parser.add_argument(
+        "-md", help="path of a file in which to save the mean diffusivity map."
+    )
+    parser.add_argument(
+        "-ad", help="path of a file in which to save the axial diffusivity map.",
+    )
+    parser.add_argument(
+        "-rd", help="path of a file in which to save the radial diffusivity map.",
+    )
+    parser.add_argument(
+        "-mk", help="path of a file in which to save the mean kurtosis map."
+    )
+    parser.add_argument(
+        "-ak", help="path of a file in which to save the axial kurtosis map.",
+    )
+    parser.add_argument(
+        "-rk", help="path of a file in which to save the radial kurtosis map.",
+    )
+    parser.add_argument(
+        "-s0", help="path of a file in which to save the estimated signal at b=0.",
+    )
+    args = parser.parse_args()
+
+    # Load data
+
+    data_img = nib.load(args.data)
+    data = data_img.get_fdata()
+    affine = data_img.affine
+    bvals = np.loadtxt(args.bvals) * 1e-3
+    bvecs = np.loadtxt(args.bvecs)
+    if bvecs.ndim == 2 and bvecs.shape[0] == 3:
+        bvecs = bvecs.T
+    if args.mask:
+        mask = nib.load(args.mask).get_fdata().astype(bool)
+    else:
+        mask = None
+
+    # Clean, scale, and clip data
+
+    data[np.isinf(data)] = np.nan
+    data[np.isnan(data)] = 0
+    C = np.nanmean(data[..., np.where(bvals == np.min(bvals))])
+    data /= C
+    min_signal = np.finfo(float).resolution
+    data[data < min_signal] = min_signal
+
+    # Fit model to data
+
+    X = _design_matrix(bvals, bvecs)
+    params = _ols_fit(data, X, mask)
+
+    # Save results
+
+    if args.md:
+        nib.save(nib.Nifti1Image(_md(params, mask) * 1e-3, affine), args.md)
+    if args.ad:
+        nib.save(nib.Nifti1Image(_ad(params, mask) * 1e-3, affine), args.ad)
+    if args.rd:
+        nib.save(nib.Nifti1Image(_rd(params, mask) * 1e-3, affine), args.rd)
+    if args.mk:
+        nib.save(nib.Nifti1Image(_mk(params, mask), affine), args.mk)
+    if args.ak:
+        nib.save(nib.Nifti1Image(_ak(params, mask), affine), args.ak)
+    if args.rk:
+        nib.save(nib.Nifti1Image(_rk(params, mask), affine), args.rk)
+    if args.s0:
+        nib.save(nib.Nifti1Image(np.exp(params[..., 0] + np.log(C)), affine), args.s0)
