@@ -505,3 +505,30 @@ def _rk(params, mask=None):
         rk_flat[i] = np.mean(_akc(params_flat[i], vs))
     rk[mask] = rk_flat
     return rk
+
+
+def _ols_fit(data, design_matrix, mask=None):
+    """Estimate model parameters with ordinary least squares.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Floating-point array with shape (..., number of acquisitions).
+    design_matrix : numpy.ndarray
+        Floating-point array with shape (number of acquisitions, 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(data.shape[0:-1]).astype(bool)
+    params = np.zeros(mask.shape + (22,))
+    params[mask] = (
+        np.linalg.pinv(design_matrix.T @ design_matrix)
+        @ design_matrix.T
+        @ np.log(data[mask])[..., np.newaxis]
+    )[..., 0]
+    return params
