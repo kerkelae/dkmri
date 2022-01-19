@@ -1,4 +1,7 @@
+from pathlib import Path
 from setuptools import setup
+
+long_description = (Path(__file__).parent / "README.md").read_text()
 
 setup(
     name="dkmri",
@@ -11,4 +14,6 @@ setup(
     packages=["dkmri"],
     install_requires=["jax", "jaxlib", "nibabel", "numpy",],
     scripts=["dkmri/dkmri.py"],
+    long_description=long_description,
+    long_description_content_type="text/markdown",
 )
