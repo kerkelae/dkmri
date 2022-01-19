@@ -2,12 +2,20 @@
 
 Reproducible and efficient diffusion kurtosis tensor estimation in Python.
 
+## Installation
+
+`dkmri` can be installed with [pip](https://pypi.org/):
+
+```
+pip install dkmri
+```
+
 ## Usage example
 
 `dkmri` can be used from the command line as follows:
 
 ```
-python dkmri.py \
+dkmri.py \
 example-data/data.nii.gz \
 example-data/data.bval \
 example-data/data.bvec \

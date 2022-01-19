@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """Diffusion kurtosis magnetic resonance imaging."""
 
 import argparse

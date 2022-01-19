@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.testing as npt
 
-import dkmri
+from .. import dkmri
 
 
 SEED = 123
