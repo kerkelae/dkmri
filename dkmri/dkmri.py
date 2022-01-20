@@ -653,6 +653,29 @@ def _predict(data, m, akc_mask, mask=None, **kwargs):
     return m_pred, R2
 
 
+def _signal(params, design_matrix, mask=None):
+    """Predict signal from parameters.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    design_matrix : numpy.ndarray
+        Floating-point array with shape (number of acquisitions, 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    S_hat = np.exp(design_matrix @ params[..., np.newaxis])[..., 0]
+    S_hat[~mask] = 0
+    return S_hat
+
+
 if __name__ == "__main__":
 
     # Parse arguments
