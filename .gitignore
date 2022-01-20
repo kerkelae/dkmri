@@ -1,5 +1,6 @@
-# Dataset for testing during development
+# For testing during development
 example-data/
+example.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
