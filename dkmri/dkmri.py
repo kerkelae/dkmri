@@ -9,10 +9,13 @@ import jax.numpy as jnp
 from jax.scipy.optimize import minimize
 import nibabel as nib
 import numpy as np
+from sklearn.neural_network import MLPRegressor
 
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
+
+SEED = 123
 
 # Parameter array elements are:
 #
@@ -593,6 +596,63 @@ def _nlls_fit(data, design_matrix, mask=None):
     return params
 
 
+@jax.jit
+def _akc_mask(W, vs, mask):
+    """Compute a binary mask based on kurtosis tensor positivity.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 3, 3, 3, 3).
+    vs : numpy.ndarray or jaxlib.xla_extension.DeviceArray
+        Floating-point array with shape (number of directions, 3).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    akc_mask = np.ones(mask.shape)
+    for v in vs:
+        akc_mask *= (v.T @ (v.T @ W @ v) @ v) > 0
+    akc_mask *= mask
+    return akc_mask
+
+
+def _predict(data, m, akc_mask, mask=None, **kwargs):
+    """Train a multilayer perceptron to predict `m` from `data` and return the
+    predicted map and R-squared on training data.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Floating-point array with shape (..., number of acquisitions).
+    m : numpy.ndarray
+        Floating-point array.
+    akc_mask : numpy.ndarray, optional
+        Boolean array.
+    mask : numpy.ndarray, optional
+        Boolean array.
+    **kwargs
+        Keyword arguments passed to `sklearn.neural_network.MLPRegressor`.
+
+    Returns
+    -------
+    np.ndarray
+    float
+    """
+    if mask is None:
+        mask = np.ones(data.shape[0:-1]).astype(bool)
+    X = data[akc_mask]
+    y = np.clip(np.nan_to_num(m[akc_mask]), -3 / 7, 10)
+    reg = MLPRegressor(random_state=SEED, **kwargs).fit(X, y)
+    R2 = reg.score(X, y)
+    m_pred = np.zeros(mask.shape)
+    m_pred[mask] = reg.predict(data[mask])
+    return m_pred, R2
+
+
 if __name__ == "__main__":
 
     # Parse arguments
@@ -639,6 +699,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s0", help="path of a file in which to save the estimated signal at b=0.",
     )
+    parser.add_argument(
+        "-mk_pred",
+        help="path of a file in which to save the predicted mean kurtosis map.",
+    )
+    parser.add_argument(
+        "-ak_pred",
+        help="path of a file in which to save the predicted axial kurtosis map.",
+    )
+    parser.add_argument(
+        "-rk_pred",
+        help="path of a file in which to save the predicted radial kurtosis map.",
+    )
     args = parser.parse_args()
 
     # Load data
@@ -666,8 +738,28 @@ if __name__ == "__main__":
 
     # Fit model to data
 
+    print("Fitting DKI to data with standard NLLS")
     X = _design_matrix(bvals, bvecs)
     params = _nlls_fit(data, X, mask)
+
+    if args.mk_pred:
+        print("Training a MLP to predict MK")
+        mk = np.clip(_mk(params, mask), -3 / 7, 10)
+        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
+        mk_pred, R2 = _predict(data, mk, akc_mask, mask, hidden_layer_sizes=(50, 50))
+        print(f"R^2 on training data = {R2}")
+    if args.ak_pred:
+        print("Training a MLP to predict AK")
+        ak = np.clip(_ak(params, mask), -3 / 7, 10)
+        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
+        ak_pred, R2 = _predict(data, ak, akc_mask, mask, hidden_layer_sizes=(50, 50))
+        print(f"R^2 on training data = {R2}")
+    if args.rk_pred:
+        print("Training a MLP to predict RK")
+        rk = np.clip(_rk(params, mask), -3 / 7, 10)
+        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
+        rk_pred, R2 = _predict(data, rk, akc_mask, mask, hidden_layer_sizes=(50, 50))
+        print(f"R^2 on training data = {R2}")
 
     # Save results
 
@@ -685,3 +777,9 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(_rk(params, mask), affine), args.rk)
     if args.s0:
         nib.save(nib.Nifti1Image(np.exp(params[..., 0] + np.log(C)), affine), args.s0)
+    if args.mk_pred:
+        nib.save(nib.Nifti1Image(mk_pred, affine), args.mk_pred)
+    if args.ak_pred:
+        nib.save(nib.Nifti1Image(ak_pred, affine), args.ak_pred)
+    if args.rk_pred:
+        nib.save(nib.Nifti1Image(rk_pred, affine), args.rk_pred)
