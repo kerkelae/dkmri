@@ -12,21 +12,9 @@ pip install dkmri
 
 ## Usage example
 
-`dkmri` can be used from the command line as follows:
+`dkmri` can be used from the command line. To see an usage example and an
+explanation of the parameters, execute the following:
 
 ```
-dkmri.py \
-example-data/data.nii.gz \
-example-data/data.bval \
-example-data/data.bvec \
--mask example-data/mask.nii.gz \
--md example-data/md.nii.gz \
--ad example-data/ad.nii.gz \
--rd example-data/rd.nii.gz \
--mk example-data/mk.nii.gz \
--ak example-data/ak.nii.gz \
--rk example-data/rk.nii.gz \
--s0 example-data/s0.nii.gz
+dkmri.py -h
 ```
-
-The parameters on lines starting with a dash (`-`) are optional.
