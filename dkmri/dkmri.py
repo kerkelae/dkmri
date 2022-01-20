@@ -6,6 +6,7 @@ import argparse
 
 import jax
 import jax.numpy as jnp
+from jax.scipy.optimize import minimize
 import nibabel as nib
 import numpy as np
 
@@ -539,6 +540,59 @@ def _ols_fit(data, design_matrix, mask=None):
     return params
 
 
+def _nlls_fit(data, design_matrix, mask=None):
+    """Estimate model parameters with non-linear least squares.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Floating-point array with shape (..., number of acquisitions).
+    design_matrix : numpy.ndarray
+        Floating-point array with shape (number of acquisitions, 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+
+    if mask is None:
+        mask = np.ones(data.shape[0:-1]).astype(bool)
+
+    data_flat = data[mask]
+
+    x0_flat = jnp.asarray(_ols_fit(data_flat, design_matrix))
+    design_matrix = jnp.asarray(design_matrix)
+    data_flat = jnp.asarray(data_flat)
+
+    def cost(params, design_matrix, y):
+        return jnp.mean((jnp.exp(design_matrix @ params) - y) ** 2)
+
+    @jax.jit
+    def jit_minimize(i):
+        return minimize(
+            fun=cost,
+            x0=x0_flat[i],
+            args=(design_matrix, data_flat[i]),
+            method="BFGS",
+            options={"line_search_maxiter": 100},
+        )
+
+    size = len(data_flat)
+    params_flat = np.zeros((size, 22))
+    for i in range(size):
+        results = jit_minimize(i)
+        params_flat[i] = results.x
+        if not results.success:
+            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+
+    params = np.zeros(mask.shape + (22,))
+    params[mask] = params_flat
+
+    return params
+
+
 if __name__ == "__main__":
 
     # Parse arguments
@@ -613,7 +667,7 @@ if __name__ == "__main__":
     # Fit model to data
 
     X = _design_matrix(bvals, bvecs)
-    params = _ols_fit(data, X, mask)
+    params = _nlls_fit(data, X, mask)
 
     # Save results
 
