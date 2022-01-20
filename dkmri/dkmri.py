@@ -543,7 +543,7 @@ def _ols_fit(data, design_matrix, mask=None):
     return params
 
 
-def _nlls_fit(data, design_matrix, mask=None):
+def _nlls_fit(data, design_matrix, mask=None, x0=None):
     """Estimate model parameters with non-linear least squares.
 
     Parameters
@@ -554,6 +554,8 @@ def _nlls_fit(data, design_matrix, mask=None):
         Floating-point array with shape (number of acquisitions, 22).
     mask : numpy.ndarray, optional
         Boolean array.
+    x0 : numpy.ndarray, optional
+        Floating-point array with shape (..., 22).
 
     Returns
     -------
@@ -565,7 +567,10 @@ def _nlls_fit(data, design_matrix, mask=None):
 
     data_flat = data[mask]
 
-    x0_flat = jnp.asarray(_ols_fit(data_flat, design_matrix))
+    if x0 is None:
+        x0_flat = jnp.asarray(_ols_fit(data_flat, design_matrix))
+    else:
+        x0_flat = jnp.asarray(x0[mask])
     design_matrix = jnp.asarray(design_matrix)
     data_flat = jnp.asarray(data_flat)
 
@@ -587,8 +592,8 @@ def _nlls_fit(data, design_matrix, mask=None):
     for i in range(size):
         results = jit_minimize(i)
         params_flat[i] = results.x
-        if not results.success:
-            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+        # if not results.success:
+        #    print(f"Fit was not successful in voxel {i} (status = {results.status})")
 
     params = np.zeros(mask.shape + (22,))
     params[mask] = params_flat
@@ -713,8 +718,8 @@ def _msk_fit(data, bvals, bvecs, mask=None):
     for i in range(size):
         results = jit_minimize(i)
         msk_params_flat[i] = results.x
-        if not results.success:
-            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+        # if not results.success:
+        #    print(f"Fit was not successful in voxel {i} (status = {results.status})")
 
     msk_params = np.zeros(mask.shape + (3,))
     msk_params[mask] = msk_params_flat
@@ -755,6 +760,8 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
         Floating-point array with shape (..., number of acquisitions).
     design_matrix : numpy.ndarray
         Floating-point array with shape (number of acquisitions, 22).
+    x0 : numpy.ndarray, optional
+        Floating-point array with shape (..., 22).
     mk_pred : numpy.ndarray
         Floating-point array.
     mask : numpy.ndarray, optional
@@ -772,11 +779,12 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
     size = len(data_flat)
     x0_flat = x0[mask]
 
-    mse_dki = np.median(
-        np.mean((_signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
-    )
-    mse_mk = np.median((mk_pred[mask] - _mk(x0_flat)) ** 2)
-    alpha = 0.1 * mse_dki / mse_mk
+    # mse_dki = np.median(
+    #    np.mean((_signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
+    # )
+    # mse_mk = np.median((mk_pred[mask] - _mk(x0_flat)) ** 2)
+    # alpha = 1.0 * mse_dki / mse_mk
+    alpha = 10  # Hard coded for now
 
     x0_flat = jnp.asarray(x0_flat)
     design_matrix = jnp.asarray(design_matrix)
@@ -797,20 +805,28 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
             x0=x0_flat[i],
             args=(design_matrix, data_flat[i], alpha, vs, mk_pred_flat[i]),
             method="BFGS",
-            options={"maxiter": int(1e5), "line_search_maxiter": int(1e3)},
+            options={
+                "maxiter": int(1e5),
+                "line_search_maxiter": int(1e5),
+                "gtol": 1e-3,
+            },
         )
 
+    fit_status_flat = np.zeros(size)
     params_flat = np.zeros((size, 22))
     for i in range(size):
         results = jit_minimize(i)
         params_flat[i] = results.x
         if not results.success:
-            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+            fit_status_flat[i] = results.status
 
     params = np.zeros(mask.shape + (22,))
     params[mask] = params_flat
 
-    return params
+    fit_status = np.zeros(mask.shape)
+    fit_status[mask] = fit_status_flat
+
+    return params, fit_status
 
 
 if __name__ == "__main__":
@@ -871,6 +887,9 @@ if __name__ == "__main__":
         "-rk_pred",
         help="path of a file in which to save the predicted radial kurtosis map.",
     )
+    parser.add_argument(
+        "-fit_status", help="path of a file in which to save the fit status map.",
+    )
     args = parser.parse_args()
 
     # Load data
@@ -924,10 +943,26 @@ if __name__ == "__main__":
         rk_pred, R2 = _predict(data, rk, akc_mask, mask, hidden_layer_sizes=(50, 50))
         print(f"R^2 on training data = {R2}")
 
+    # MSK
+
+    print("Calculating initial positions with MSK")
+    msk_params = _msk_fit(data, bvals, bvecs, mask)
+    x0 = np.zeros(nlls_params.shape)
+    x0[..., 0] = msk_params[..., 0]
+    x0[..., 1] = msk_params[..., 1]
+    x0[..., 2] = msk_params[..., 1]
+    x0[..., 3] = msk_params[..., 1]
+    x0[..., 7] = msk_params[..., 2] * msk_params[..., 1] ** 2
+    x0[..., 8] = msk_params[..., 2] * msk_params[..., 1] ** 2
+    x0[..., 9] = msk_params[..., 2] * msk_params[..., 1] ** 2
+    x0[..., 16] = msk_params[..., 2] * msk_params[..., 1] ** 2 / 3
+    x0[..., 17] = msk_params[..., 2] * msk_params[..., 1] ** 2 / 3
+    x0[..., 18] = msk_params[..., 2] * msk_params[..., 1] ** 2 / 3
+
     # Fit model to data with regularized NLLS
 
     print("Fitting DKI to data with regularized NLLS")
-    params = _reg_nlls_fit(data, X, nlls_params, mk_pred, mask)
+    params, fit_status = _reg_nlls_fit(data, X, x0, mk_pred, mask)
 
     # Save results
 
@@ -951,3 +986,5 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(ak_pred, affine), args.ak_pred)
     if args.rk_pred:
         nib.save(nib.Nifti1Image(rk_pred, affine), args.rk_pred)
+    if args.fit_status:
+        nib.save(nib.Nifti1Image(fit_status, affine), args.fit_status)
