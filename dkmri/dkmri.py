@@ -676,6 +676,73 @@ def _signal(params, design_matrix, mask=None):
     return S_hat
 
 
+def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
+    """Estimate model parameters with regularized non-linear least squares.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Floating-point array with shape (..., number of acquisitions).
+    design_matrix : numpy.ndarray
+        Floating-point array with shape (number of acquisitions, 22).
+    mk_pred : numpy.ndarray
+        Floating-point array.
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+
+    if mask is None:
+        mask = np.ones(data.shape[0:-1]).astype(bool)
+
+    data_flat = data[mask]
+    size = len(data_flat)
+    x0_flat = x0[mask]
+
+    mse_dki = np.median(
+        np.mean((_signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
+    )
+    mse_mk = np.median((mk_pred[mask] - _mk(x0_flat)) ** 2)
+    alpha = 0.1 * mse_dki / mse_mk
+
+    x0_flat = jnp.asarray(x0_flat)
+    design_matrix = jnp.asarray(design_matrix)
+    data_flat = jnp.asarray(data_flat)
+    vs = jnp.asarray(_45_dirs)
+    mk_pred_flat = jnp.asarray(mk_pred[mask])
+
+    def cost(params, design_matrix, y, alpha, vs, mk_pred):
+        return (
+            jnp.mean((jnp.exp(design_matrix @ params) - y) ** 2)
+            + alpha * (jnp.mean(_akc(params, vs)) - mk_pred) ** 2
+        )
+
+    @jax.jit
+    def jit_minimize(i):
+        return minimize(
+            fun=cost,
+            x0=x0_flat[i],
+            args=(design_matrix, data_flat[i], alpha, vs, mk_pred_flat[i]),
+            method="BFGS",
+            options={"maxiter": int(1e5), "line_search_maxiter": int(1e3)},
+        )
+
+    params_flat = np.zeros((size, 22))
+    for i in range(size):
+        results = jit_minimize(i)
+        params_flat[i] = results.x
+        if not results.success:
+            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+
+    params = np.zeros(mask.shape + (22,))
+    params[mask] = params_flat
+
+    return params
+
+
 if __name__ == "__main__":
 
     # Parse arguments
@@ -759,30 +826,38 @@ if __name__ == "__main__":
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
 
-    # Fit model to data
+    # Fit model to data with NLLS
 
     print("Fitting DKI to data with standard NLLS")
     X = _design_matrix(bvals, bvecs)
-    params = _nlls_fit(data, X, mask)
+    nlls_params = _nlls_fit(data, X, mask)
 
-    if args.mk_pred:
-        print("Training a MLP to predict MK")
-        mk = np.clip(_mk(params, mask), -3 / 7, 10)
-        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
-        mk_pred, R2 = _predict(data, mk, akc_mask, mask, hidden_layer_sizes=(50, 50))
-        print(f"R^2 on training data = {R2}")
+    # Predict kurtosis measures
+
+    print("Training a MLP to predict MK")
+    mk = np.clip(_mk(nlls_params, mask), -3 / 7, 10)
+    akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
+    mk_pred, R2 = _predict(data, mk, akc_mask, mask, hidden_layer_sizes=(50, 50))
+    print(f"R^2 on training data = {R2}")
+
     if args.ak_pred:
         print("Training a MLP to predict AK")
-        ak = np.clip(_ak(params, mask), -3 / 7, 10)
-        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
+        ak = np.clip(_ak(nlls_params, mask), -3 / 7, 10)
+        akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
         ak_pred, R2 = _predict(data, ak, akc_mask, mask, hidden_layer_sizes=(50, 50))
         print(f"R^2 on training data = {R2}")
+
     if args.rk_pred:
         print("Training a MLP to predict RK")
-        rk = np.clip(_rk(params, mask), -3 / 7, 10)
-        akc_mask = _akc_mask(_params_to_W(params), _45_dirs, mask).astype(bool)
+        rk = np.clip(_rk(nlls_params, mask), -3 / 7, 10)
+        akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
         rk_pred, R2 = _predict(data, rk, akc_mask, mask, hidden_layer_sizes=(50, 50))
         print(f"R^2 on training data = {R2}")
+
+    # Fit model to data with regularized NLLS
+
+    print("Fitting DKI to data with regularized NLLS")
+    params = _reg_nlls_fit(data, X, nlls_params, mk_pred, mask)
 
     # Save results
 
