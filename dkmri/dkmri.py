@@ -482,7 +482,7 @@ def _vec2vec_rotmat(v, k):
         [[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]]
     )
     R = (
-        np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.matmul(K, K)
+        np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)
     )  # Rodrigues' rotation formula
     return R
 
