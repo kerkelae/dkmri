@@ -147,6 +147,14 @@ def test__params_to_W():
     npt.assert_almost_equal(W, desired_W)
 
 
+def test__tensors_to_params():
+    S0 = np.exp(params[..., 0])
+    D = dkmri._params_to_D(params)
+    W = dkmri._params_to_W(params)
+    npt.assert_almost_equal(dkmri._tensors_to_params(S0, D, W), params)
+    return
+
+
 def test__adc():
     np.random.seed(SEED)
     D = dkmri._params_to_D(params)

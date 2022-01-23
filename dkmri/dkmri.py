@@ -209,6 +209,51 @@ def _params_to_W(params):
     return W
 
 
+def _tensors_to_params(S0, D, W):
+    """Return the parameter array corresponding to tensors.
+
+    Parameters
+    ----------
+    S0 : numpy.ndarray
+        Floating-point array.
+    D : numpy.ndarray
+        Floating-point array with shape (..., 3, 3).
+    W : numpy.ndarray
+        Floating-point array with shape (..., 3, 3, 3, 3).
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    params = np.zeros(np.asarray(S0).shape + (22,))
+    params[..., 0] = np.log(S0)
+    params[..., 1] = D[..., 0, 0]
+    params[..., 2] = D[..., 1, 1]
+    params[..., 3] = D[..., 2, 2]
+    params[..., 4] = D[..., 0, 1]
+    params[..., 5] = D[..., 0, 2]
+    params[..., 6] = D[..., 1, 2]
+    params[..., 7] = W[..., 0, 0, 0, 0]
+    params[..., 8] = W[..., 1, 1, 1, 1]
+    params[..., 9] = W[..., 2, 2, 2, 2]
+    params[..., 10] = W[..., 0, 0, 0, 1]
+    params[..., 11] = W[..., 0, 0, 0, 2]
+    params[..., 12] = W[..., 1, 1, 1, 0]
+    params[..., 13] = W[..., 1, 1, 1, 2]
+    params[..., 14] = W[..., 2, 2, 2, 0]
+    params[..., 15] = W[..., 2, 2, 2, 1]
+    params[..., 16] = W[..., 0, 0, 1, 1]
+    params[..., 17] = W[..., 0, 0, 2, 2]
+    params[..., 18] = W[..., 1, 1, 2, 2]
+    params[..., 19] = W[..., 0, 0, 1, 2]
+    params[..., 20] = W[..., 1, 1, 0, 2]
+    params[..., 21] = W[..., 2, 2, 0, 1]
+    evals, _ = np.linalg.eigh(D)
+    MD = np.mean(evals, axis=-1)[..., np.newaxis]
+    params[..., 7::] *= MD ** 2
+    return params
+
+
 @jax.jit
 def _adc(params, vs):
     """Compute apparent diffusion coefficients along unit vectors vs.
