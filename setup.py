@@ -12,7 +12,7 @@ setup(
     author_email="leevi.kerkela@protonmail.com",
     license="MIT",
     packages=["dkmri"],
-    install_requires=["jax", "jaxlib", "nibabel", "numpy",],
+    install_requires=["jax", "jaxlib", "nibabel", "numba", "numpy",],
     scripts=["dkmri/dkmri.py"],
     long_description=long_description,
     long_description_content_type="text/markdown",
