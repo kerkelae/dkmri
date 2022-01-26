@@ -1,3 +1,7 @@
+# Data for example notebook
+docs/data.*
+docs/mask.nii.gz
+
 # For testing during development
 example-data/
 example.ipynb
