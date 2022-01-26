@@ -5,14 +5,14 @@ long_description = (Path(__file__).parent / "README.md").read_text()
 
 setup(
     name="dkmri",
-    version="0.0.3dev",
+    version="0.0.3",
     description="Reproducible and efficient diffusion kurtosis imaging in Python.",
     url="https://github.com/kerkelae/dkmri",
     author="Leevi Kerkelä",
     author_email="leevi.kerkela@protonmail.com",
     license="MIT",
     packages=["dkmri"],
-    install_requires=["jax", "jaxlib", "nibabel", "numba", "numpy",],
+    install_requires=["jax", "jaxlib", "nibabel", "numba", "numpy", "sklearn"],
     scripts=["dkmri/dkmri.py"],
     long_description=long_description,
     long_description_content_type="text/markdown",
