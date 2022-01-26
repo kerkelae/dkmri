@@ -3,49 +3,26 @@
 """Diffusion kurtosis magnetic resonance imaging."""
 
 import argparse
+import warnings
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.optimize import minimize as jaxminimize
+from jax.scipy.optimize import minimize
 import nibabel as nib
 import numba
 import numpy as np
-from scipy.optimize import minimize as scipyminimize
 from sklearn.neural_network import MLPRegressor
 
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
 
-SEED = 123
-
-# Parameter array elements are:
-#
-# params[..., 0] = log(S0)
-# params[..., 1] = D_xx
-# params[..., 2] = D_yy
-# params[..., 3] = D_zz
-# params[..., 4] = D_xy
-# params[..., 5] = D_xz
-# params[..., 6] = D_yz
-# params[..., 7] = W_xxxx * MD ** 2
-# params[..., 8] = W_yyyy * MD ** 2
-# params[..., 9] = W_zzzz * MD ** 2
-# params[..., 10] = W_xxxy * MD ** 2
-# params[..., 11] = W_xxxz * MD ** 2
-# params[..., 12] = W_yyyx * MD ** 2
-# params[..., 13] = W_yyyz * MD ** 2
-# params[..., 14] = W_zzzx * MD ** 2
-# params[..., 15] = W_zzzy * MD ** 2
-# params[..., 16] = W_xxyy * MD ** 2
-# params[..., 17] = W_xxzz * MD ** 2
-# params[..., 18] = W_yyzz * MD ** 2
-# params[..., 19] = W_xxyz * MD ** 2
-# params[..., 20] = W_yyxz * MD ** 2
-# params[..., 21] = W_zzxy * MD ** 2
+SEED = 123  # Hard coded for reproducible predictions
+MIN_K = -3 / 7
+MAX_K = 10
 
 
-def _design_matrix(bvals, bvecs):
+def design_matrix(bvals, bvecs):
     """Return the diffusion kurtosis imaging design matrix.
 
     Parameters
@@ -85,7 +62,7 @@ def _design_matrix(bvals, bvecs):
     return X
 
 
-def _params_to_D(params):
+def params_to_D(params):
     """Return diffusion tensors corresponding to a parameter array.
 
     Parameters
@@ -110,7 +87,7 @@ def _params_to_D(params):
     return D
 
 
-def _params_to_W(params):
+def params_to_W(params):
     """Return kurtosis tensors corresponding to a parameter array.
 
     Parameters
@@ -204,14 +181,14 @@ def _params_to_W(params):
     W[..., 1, 2, 2, 0] = params[..., 21]
     W[..., 1, 2, 0, 2] = params[..., 21]
     W[..., 1, 0, 2, 2] = params[..., 21]
-    evals, _ = np.linalg.eigh(_params_to_D(params))
+    evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params)))
     MD = np.mean(evals, axis=-1)[..., np.newaxis, np.newaxis, np.newaxis, np.newaxis]
     MD[MD == 0] = np.nan  # To avoid warnings due to division by zero
     W /= MD ** 2
     return W
 
 
-def _tensors_to_params(S0, D, W):
+def tensors_to_params(S0, D, W):
     """Return the parameter array corresponding to tensors.
 
     Parameters
@@ -250,7 +227,7 @@ def _tensors_to_params(S0, D, W):
     params[..., 19] = W[..., 0, 0, 1, 2]
     params[..., 20] = W[..., 1, 1, 0, 2]
     params[..., 21] = W[..., 2, 2, 0, 1]
-    evals, _ = np.linalg.eigh(D)
+    evals, _ = np.linalg.eigh(np.nan_to_num(D))
     MD = np.mean(evals, axis=-1)[..., np.newaxis]
     params[..., 7::] *= MD ** 2
     return params
@@ -258,7 +235,7 @@ def _tensors_to_params(S0, D, W):
 
 @jax.jit
 def _adc(params, vs):
-    """Compute apparent diffusion coefficients along unit vectors vs.
+    """Compute apparent diffusion coefficients along unit vectors `vs`.
 
     Parameters
     ----------
@@ -281,7 +258,7 @@ def _adc(params, vs):
     )
 
 
-def _md(params, mask=None):
+def params_to_md(params, mask=None):
     """Compute mean diffusivity.
 
     Parameters
@@ -297,13 +274,13 @@ def _md(params, mask=None):
     """
     if mask is None:
         mask = np.ones(params.shape[0:-1]).astype(bool)
-    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
     md = np.zeros(mask.shape)
     md[mask] = np.mean(evals, axis=1)
     return md
 
 
-def _ad(params, mask=None):
+def params_to_ad(params, mask=None):
     """Compute axial diffusivity.
 
     Parameters
@@ -319,13 +296,13 @@ def _ad(params, mask=None):
     """
     if mask is None:
         mask = np.ones(params.shape[0:-1]).astype(bool)
-    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
     ad = np.zeros(mask.shape)
     ad[mask] = evals[:, 2]
     return ad
 
 
-def _rd(params, mask=None):
+def params_to_rd(params, mask=None):
     """Compute radial diffusivity.
 
     Parameters
@@ -341,7 +318,7 @@ def _rd(params, mask=None):
     """
     if mask is None:
         mask = np.ones(params.shape[0:-1]).astype(bool)
-    evals, _ = np.linalg.eigh(_params_to_D(params[mask]))
+    evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
     rd = np.zeros(mask.shape)
     rd[mask] = np.mean(evals[:, 0:2], axis=1)
     return rd
@@ -349,7 +326,7 @@ def _rd(params, mask=None):
 
 @jax.jit
 def _akc(params, vs):
-    """Compute apparent kurtosis coefficients along unit vectors vs.
+    """Compute apparent kurtosis coefficients along unit vectors `vs`.
 
     Parameters
     ----------
@@ -429,10 +406,10 @@ _45_dirs = np.array(
         [3.40163643e-01, 9.66360119e-02, -9.35387715e-01],
         [-1.82043727e-01, -9.27048310e-02, -9.78910566e-01],
     ]
-)
+)  # Directions along which AKC is evaluated for computing MK
 
 
-def _mk(params, mask=None):
+def params_to_mk(params, mask=None):
     """Compute mean kurtosis.
 
     Parameters
@@ -458,7 +435,7 @@ def _mk(params, mask=None):
     return mk
 
 
-def _ak(params, mask=None):
+def params_to_ak(params, mask=None):
     """Compute axial kurtosis.
 
     Parameters
@@ -478,7 +455,7 @@ def _ak(params, mask=None):
     ak = np.zeros(mask.shape)
     ak_flat = ak[mask]
     size = len(params_flat)
-    _, evecs = np.linalg.eigh(_params_to_D(params_flat))
+    _, evecs = np.linalg.eigh(np.nan_to_num(params_to_D(params_flat)))
     for i in range(size):
         ak_flat[i] = _akc(params_flat[i], evecs[np.newaxis, i, :, 2])
     ak[mask] = ak_flat
@@ -498,12 +475,12 @@ _10_dirs = np.array(
         [0.0, -9.51056516e-01, 3.09016994e-01],
         [0.0, -5.87785252e-01, 8.09016994e-01],
     ]
-)
+)  # Directions along which AKC is evaluated for computing RK
 
 
 @numba.njit
 def _vec2vec_rotmat(v, k):
-    """Compute a rotation matrix defining a rotation that aligns v with k.
+    """Compute a rotation matrix for aligning `v` with `k`.
 
     Parameters
     -----------
@@ -535,7 +512,7 @@ def _vec2vec_rotmat(v, k):
     return R
 
 
-def _rk(params, mask=None):
+def params_to_rk(params, mask=None):
     """Compute radial kurtosis.
 
     Parameters
@@ -555,13 +532,40 @@ def _rk(params, mask=None):
     rk = np.zeros(mask.shape)
     rk_flat = rk[mask]
     size = len(params_flat)
-    _, evecs = np.linalg.eigh(_params_to_D(params_flat))
+    _, evecs = np.linalg.eigh(np.nan_to_num(params_to_D(params_flat)))
     for i in range(size):
         R = _vec2vec_rotmat(np.array([1.0, 0, 0]), evecs[i, :, 2])
         vs = (R @ _10_dirs.T).T
         rk_flat[i] = np.mean(_akc(params_flat[i], vs))
     rk[mask] = rk_flat
     return rk
+
+
+def _mtk(params, mask=None):
+    """Compute mean of the kurtosis tensor.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    W = params_to_W(params)
+    W_flat = W[mask]
+    mtk = np.zeros(mask.shape)
+    mtk_flat = mtk[mask]
+    size = len(W_flat)
+    for i in range(size):
+        mtk_flat[i] = np.trace(np.trace(W_flat[i])) / 5
+    mtk[mask] = mtk_flat
+    return mtk
 
 
 def _ols_fit(data, design_matrix, mask=None):
@@ -594,9 +598,6 @@ def _ols_fit(data, design_matrix, mask=None):
 def _nlls_fit(data, design_matrix, mask=None):
     """Estimate model parameters with non-linear least squares.
 
-    Optimization is done using the BFGS algorithm with the OLS solution as
-    initial position.
-
     Parameters
     ----------
     data : numpy.ndarray
@@ -610,7 +611,6 @@ def _nlls_fit(data, design_matrix, mask=None):
     -------
     numpy.ndarray
     """
-
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
@@ -624,7 +624,7 @@ def _nlls_fit(data, design_matrix, mask=None):
 
     @jax.jit
     def jit_minimize(i):
-        return jaxminimize(
+        return minimize(
             fun=cost,
             x0=x0_flat[i],
             args=(design_matrix, data_flat[i]),
@@ -636,7 +636,9 @@ def _nlls_fit(data, design_matrix, mask=None):
     for i in range(size):
         results = jit_minimize(i)
         if not results.success:
-            print(f"Fit was not successful in voxel {i} (status = {results.status})")
+            warnings.warn(
+                f"Fit was not successful in voxel {i} (status = {results.status})"
+            )
         params_flat[i] = results.x
 
     params = np.zeros(mask.shape + (22,))
@@ -647,7 +649,7 @@ def _nlls_fit(data, design_matrix, mask=None):
 
 @jax.jit
 def _akc_mask(W, vs, mask):
-    """Compute a binary mask based on kurtosis tensor positivity.
+    """Compute a mask based on 0 < AKC < 10 along all directions in `vs`.
 
     Parameters
     ----------
@@ -665,13 +667,13 @@ def _akc_mask(W, vs, mask):
     akc_mask = np.ones(mask.shape)
     for v in vs:
         akc_mask *= (v.T @ (v.T @ W @ v) @ v) > 0
+        akc_mask *= (v.T @ (v.T @ W @ v) @ v) < 10
     akc_mask *= mask
     return akc_mask
 
 
-def _predict(data, m, akc_mask, mask=None, **kwargs):
-    """Train a multilayer perceptron to predict `m` from `data` and return the
-    predicted map and R-squared on training data.
+def _predict(data, m, akc_mask, mask=None):
+    """Train a multilayer perceptron to predict `m` from `data`.
 
     Parameters
     ----------
@@ -679,31 +681,29 @@ def _predict(data, m, akc_mask, mask=None, **kwargs):
         Floating-point array with shape (..., number of acquisitions).
     m : numpy.ndarray
         Floating-point array.
-    akc_mask : numpy.ndarray, optional
+    akc_mask : numpy.ndarray
         Boolean array.
     mask : numpy.ndarray, optional
         Boolean array.
-    **kwargs
-        Keyword arguments passed to `sklearn.neural_network.MLPRegressor`.
 
     Returns
     -------
-    np.ndarray
-    float
+    mk_pred : np.ndarray
+    R2 : float
     """
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
     X = data[akc_mask]
-    y = np.clip(np.nan_to_num(m[akc_mask]), -3 / 7, 10)
-    reg = MLPRegressor(random_state=SEED, **kwargs).fit(X, y)
+    y = np.clip(np.nan_to_num(m[akc_mask]), MIN_K, MAX_K)
+    reg = MLPRegressor(random_state=SEED, hidden_layer_sizes=(50, 50)).fit(X, y)
     R2 = reg.score(X, y)
     m_pred = np.zeros(mask.shape)
     m_pred[mask] = reg.predict(data[mask])
     return m_pred, R2
 
 
-def _signal(params, design_matrix, mask=None):
-    """Predict signal from parameters.
+def signal(params, design_matrix, mask=None):
+    """Predict signal from model parameters.
 
     Parameters
     ----------
@@ -725,16 +725,16 @@ def _signal(params, design_matrix, mask=None):
     return S_hat
 
 
-def _calculate_x0(S0, D, mk_pred, ak_pred, rk_pred, mask=None):
+def _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask=None):
     """Calculate initial positions for the regularized NLLS fit.
-    
+
     Parameters
     ----------
     S0 : numpy.ndarray
         Floating-point array.
     D : numpy.ndarray
         Floating-point array with shape (..., 3, 3).
-    mk_pred : numpy.ndarray
+    mtk_pred : numpy.ndarray
         Floating-point array.
     ak_pred : numpy.ndarray
         Floating-point array.
@@ -753,12 +753,12 @@ def _calculate_x0(S0, D, mk_pred, ak_pred, rk_pred, mask=None):
 
     S0_flat = S0[mask]
     D_flat = D[mask]
-    mk_pred_flat = mk_pred[mask]
+    mtk_pred_flat = mtk_pred[mask]
     ak_pred_flat = ak_pred[mask]
     rk_pred_flat = rk_pred[mask]
     size = len(S0_flat)
 
-    evals, evecs = np.linalg.eigh(D_flat)
+    evals, evecs = np.linalg.eigh(np.nan_to_num(D_flat))
 
     @numba.njit
     def p(u):
@@ -814,8 +814,10 @@ def _calculate_x0(S0, D, mk_pred, ak_pred, rk_pred, mask=None):
         md = np.mean(evals[i, :])
         ad = evals[i, 2]
         rd = np.mean(evals[i, 0:2])
+        if rd < 0.1:
+            rd = 0.1
 
-        mtk = 0.9 * mk_pred_flat[i]  # Incorrect
+        mtk = mtk_pred_flat[i]
         atk = ak_pred_flat[i] * ad ** 2 / md ** 2
         rtk = rk_pred_flat[i] * rd ** 2 / md ** 2
 
@@ -857,7 +859,19 @@ def _calculate_x0(S0, D, mk_pred, ak_pred, rk_pred, mask=None):
     return x0
 
 
-def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
+def _reg_nlls_fit(
+    data,
+    design_matrix,
+    x0,
+    mk_pred,
+    ak_pred,
+    rk_pred,
+    axial_dirs,
+    radial_dirs,
+    alpha=None,
+    mask=None,
+    quiet=False,
+):
     """Estimate model parameters with regularized non-linear least squares.
 
     Parameters
@@ -870,36 +884,71 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
         Floating-point array with shape (..., 22).
     mk_pred : numpy.ndarray
         Floating-point array.
+    ak_pred : numpy.ndarray
+        Floating-point array.
+    rk_pred : numpy.ndarray
+        Floating-point array.
+    axial_dirs : numpy.ndarray
+        Floating-point array with shape (..., 1, 3).
+    radial_dirs : numpy.ndarray
+        Floating-point array with shape (..., 10, 3).
+    alpha : float
+        Constant controlling regularization term magnitude.
     mask : numpy.ndarray, optional
         Boolean array.
+    quiet : bool
+        Whether not to print messages about computation progress.
 
     Returns
     -------
-    numpy.ndarray
+    params : numpy.ndarray
+    fit_status : numpy.ndarray
     """
 
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
     data_flat = jnp.asarray(data[mask])
-    x0_flat = jnp.asarray(x0[mask])
     design_matrix = jnp.asarray(design_matrix)
-    vs = jnp.asarray(_45_dirs)
+    x0_flat = jnp.asarray(x0[mask])
     mk_pred_flat = jnp.asarray(mk_pred[mask])
+    ak_pred_flat = jnp.asarray(ak_pred[mask])
+    rk_pred_flat = jnp.asarray(rk_pred[mask])
+    vs = jnp.asarray(_45_dirs)
+    axial_dirs_flat = jnp.asarray(axial_dirs[mask])
+    radial_dirs_flat = jnp.asarray(radial_dirs[mask])
     size = len(data_flat)
 
-    # mse_dki = np.median(
-    #    np.mean((_signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
-    # )
-    # mse_mk = np.median((mk_pred[mask] - _mk(x0_flat)) ** 2)
-    # alpha = 1.0 * mse_dki / mse_mk
-    alpha = 1  # Hard coded for now
+    if alpha is None:
+        mse_dki = np.median(
+            np.mean((signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
+        )
+        mse_mk = np.median((mk_pred[mask] - params_to_mk(x0_flat)) ** 2)
+        alpha = 0.1 * mse_dki / mse_mk
+    if not quiet:
+        print(f"alpha = {alpha}")
+
+    rd_flat = jnp.asarray(params_to_rd(x0, mask)[mask])
 
     @jax.jit
-    def cost(params, design_matrix, y, alpha, vs, mk_pred):
+    def cost(
+        params,
+        design_matrix,
+        y,
+        alpha,
+        vs,
+        mk_pred,
+        ak_pred,
+        rk_pred,
+        axial_dir,
+        radial_dirs,
+        rd,
+    ):
         return (
             jnp.mean((jnp.exp(design_matrix @ params) - y) ** 2)
             + alpha * (jnp.mean(_akc(params, vs)) - mk_pred) ** 2
+            + alpha * (jnp.mean(_akc(params, axial_dir)) - ak_pred) ** 2
+            + alpha * (jnp.mean(_akc(params, radial_dirs)) - rk_pred) ** 2
         )
 
     jac = jax.jit(jax.jacfwd(cost))
@@ -907,10 +956,21 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
 
     @jax.jit
     def jit_minimize(i):
-        return jaxminimize(
+        return minimize(
             fun=cost,
             x0=x0_flat[i],
-            args=(design_matrix, data_flat[i], alpha, vs, mk_pred_flat[i]),
+            args=(
+                design_matrix,
+                data_flat[i],
+                alpha,
+                vs,
+                mk_pred_flat[i],
+                ak_pred_flat[i],
+                rk_pred_flat[i],
+                axial_dirs_flat[i],
+                radial_dirs_flat[i],
+                rd_flat[i],
+            ),
             method="BFGS",
             options={
                 "maxiter": int(1e4),
@@ -922,21 +982,9 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
     fit_status_flat = np.zeros(size)
     params_flat = np.zeros((size, 22))
     for i in range(size):
-        print(f"{int(i/size*100)}%", end="\r")
+        if not quiet:
+            print(f"{int(i/size*100)}%", end="\r")
         results = jit_minimize(i)
-        if not results.success:
-            results = scipyminimize(
-                fun=cost,
-                x0=x0_flat[i],
-                args=(design_matrix, data_flat[i], alpha, vs, mk_pred_flat[i]),
-                method="Newton-CG",
-                jac=jac,
-                hess=hess,
-            )
-            if not results.success:
-                print(
-                    f"Fit was not successful in voxel {i} (status = {results.status})"
-                )
         params_flat[i] = results.x
         fit_status_flat[i] = results.status
 
@@ -948,69 +996,221 @@ def _reg_nlls_fit(data, design_matrix, x0, mk_pred, mask=None):
     return params, fit_status
 
 
+def fit(data, bvals, bvecs, mask=None, alpha=None, quiet=False):
+    """Estimate diffusion and kurtosis tensor elements.
+
+    This function does the following:
+
+        1. Remove infinities, nans, and negative values, and normalize data.
+        2. Estimate DKI model parameters using standard NLLS.
+        3. Train a multilayer perceptron to predict kurtosis measures from data
+           in voxels where the apparent kurtosis coefficient estimated by the
+           NLLS fit was > 0 and < 10 along all directions.
+        4. Estimate model parameters using regularized NLLS where the
+           regularization terms increase the objective function value when
+           MK, AK, and RK deviate from their predicted values. Axially
+           symmetric tensors with plausible magnitudes are used as initial
+           positions for the fit.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Floating-point array with shape (..., number of acquisitions).
+    bvals : numpy.ndarray
+        Floating-point array with shape (number of acquisitions,). Must be in
+        units of ms/μm^2!
+    bvecs : numpy.ndarray
+        Floating-point array with shape (number of acquisitions, 3).
+    mask : numpy.ndarray, optional
+        Boolean array with the same shape as `data` without the last dimension.
+    alpha : float, optional
+        Constant controlling regularization term magnitudes in the objective
+        function. 
+    quiet : bool
+        Whether not to print messages about computation progress.
+
+    Returns
+    -------
+    params : numpy.ndarray
+        Estimated model parameters:
+
+            params[..., 0] = log(S0)
+            params[..., 1] = D_xx
+            params[..., 2] = D_yy
+            params[..., 3] = D_zz
+            params[..., 4] = D_xy
+            params[..., 5] = D_xz
+            params[..., 6] = D_yz
+            params[..., 7] = W_xxxx * MD ** 2
+            params[..., 8] = W_yyyy * MD ** 2
+            params[..., 9] = W_zzzz * MD ** 2
+            params[..., 10] = W_xxxy * MD ** 2
+            params[..., 11] = W_xxxz * MD ** 2
+            params[..., 12] = W_yyyx * MD ** 2
+            params[..., 13] = W_yyyz * MD ** 2
+            params[..., 14] = W_zzzx * MD ** 2
+            params[..., 15] = W_zzzy * MD ** 2
+            params[..., 16] = W_xxyy * MD ** 2
+            params[..., 17] = W_xxzz * MD ** 2
+            params[..., 18] = W_yyzz * MD ** 2
+            params[..., 19] = W_xxyz * MD ** 2
+            params[..., 20] = W_yyxz * MD ** 2
+            params[..., 21] = W_zzxy * MD ** 2
+       
+    fit_status : numpy.ndarray
+        Codes returned by the optimizer in each voxel where it was run. 0 means
+        converged succesfully, 1 means maximum BFGS iterations reached, 3 means
+        zoom failed, 4 means saddle point reached, 5 means maximum line search
+        iterations reached, and -1 means undefined.
+    mk_pred : numpy.ndarray
+        The predicted mean kurtosis map.
+    ak_pred : numpy.ndarray
+        The predicted axial kurtosis map.
+    rk_pred : numpy.ndarray
+        The predicted radial kurtosis map.
+    """
+    if mask is None:
+        mask = np.ones(data.shape[0:-1]).astype(bool)
+
+    data[np.isinf(data)] = np.nan
+    data[np.isnan(data)] = 0
+    C = np.nanmean(data[..., np.where(bvals == np.min(bvals))])
+    data /= C
+    min_signal = np.finfo(float).resolution
+    data[data < min_signal] = min_signal
+
+    if not quiet:
+        print("Fitting DKI to data with standard NLLS")
+    X = design_matrix(bvals, bvecs)
+    nlls_params = _nlls_fit(data, X, mask)
+
+    akc_mask = _akc_mask(params_to_W(nlls_params), _45_dirs, mask).astype(bool)
+    if not quiet:
+        print("Training a MLP to predict MK")
+    mk = np.clip(params_to_mk(nlls_params, mask), MIN_K, MAX_K)
+    mk_pred, R2 = _predict(data, mk, akc_mask, mask)
+    if not quiet:
+        print(f"R^2 on training data for MK = {R2}")
+    if not quiet:
+        print("Training a MLP to predict MTK")
+    mtk = np.clip(_mtk(nlls_params, mask), MIN_K, MAX_K)
+    mtk_pred, R2 = _predict(data, mtk, akc_mask, mask)
+    if not quiet:
+        print(f"R^2 on training data for MTK = {R2}")
+    if not quiet:
+        print("Training a MLP to predict AK")
+    ak = np.clip(params_to_ak(nlls_params, mask), MIN_K, MAX_K)
+    ak_pred, R2 = _predict(data, ak, akc_mask, mask)
+    if not quiet:
+        print(f"R^2 on training data for AK = {R2}")
+    if not quiet:
+        print("Training a MLP to predict RK")
+    rk = np.clip(params_to_rk(nlls_params, mask), MIN_K, MAX_K)
+    rk_pred, R2 = _predict(data, rk, akc_mask, mask)
+    if not quiet:
+        print(f"R^2 on training data for RK = {R2}")
+
+    if not quiet:
+        print("Calculating initial positions")
+    axial_dirs = np.zeros(mask.shape + (1, 3))
+    axial_dirs_flat = axial_dirs[mask]
+    radial_dirs = np.zeros(mask.shape + (10, 3))
+    radial_dirs_flat = radial_dirs[mask]
+    size = len(radial_dirs_flat)
+    _, evecs = np.linalg.eigh(np.nan_to_num(params_to_D(nlls_params)))
+    evecs_flat = evecs[mask]
+    for i in range(size):
+        axial_dirs_flat[i] = evecs_flat[i, :, 2].T
+        R = _vec2vec_rotmat(np.array([1.0, 0, 0]), evecs_flat[i, :, 2])
+        radial_dirs_flat[i] = (R @ _10_dirs.T).T
+    axial_dirs[mask] = axial_dirs_flat
+    radial_dirs[mask] = radial_dirs_flat
+    S0 = np.exp(nlls_params[..., 0])
+    D = params_to_D(nlls_params)
+    x0 = _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask)
+
+    if not quiet:
+        print("Fitting DKI to data with regularized NLLS")
+    params, fit_status = _reg_nlls_fit(
+        data,
+        X,
+        x0,
+        mk_pred,
+        ak_pred,
+        rk_pred,
+        axial_dirs,
+        radial_dirs,
+        alpha,
+        mask,
+        quiet,
+    )
+
+    return params, fit_status, mk_pred, ak_pred, rk_pred
+
+
 if __name__ == "__main__":
 
     # Parse arguments
 
     parser = argparse.ArgumentParser(
         description=(
-            "Estimate diffusion and kurtosis tensors, and compute parameter maps."
+            "Estimate diffusion and kurtosis tensors, and compute parameter maps"
         )
     )
     parser.add_argument(
-        "data", help="path of a NIfTI file with diffusion-weighted data.",
+        "data", help="path of a NIfTI file with diffusion-weighted data",
     )
     parser.add_argument(
-        "bvals", help="path of a text file with b-values in units of s/mm^2.",
+        "bvals", help="path of a text file with b-values in units of s/mm^2",
     )
     parser.add_argument(
-        "bvecs", help="path of a text file with b-vectors.",
+        "bvecs", help="path of a text file with b-vectors",
     )
     parser.add_argument(
         "-mask",
         help=(
             "path of a NIfTI file with a binary mask definining the voxels where to "
-            "estimate the tensors."
+            "estimate the tensors"
         ),
     )
     parser.add_argument(
-        "-md", help="path of a file in which to save the mean diffusivity map."
+        "-md", help="path of a file in which to save the mean diffusivity map"
     )
     parser.add_argument(
-        "-ad", help="path of a file in which to save the axial diffusivity map.",
+        "-ad", help="path of a file in which to save the axial diffusivity map",
     )
     parser.add_argument(
-        "-rd", help="path of a file in which to save the radial diffusivity map.",
+        "-rd", help="path of a file in which to save the radial diffusivity map",
     )
     parser.add_argument(
-        "-mk", help="path of a file in which to save the mean kurtosis map."
+        "-mk", help="path of a file in which to save the mean kurtosis map"
     )
     parser.add_argument(
-        "-ak", help="path of a file in which to save the axial kurtosis map.",
+        "-ak", help="path of a file in which to save the axial kurtosis map",
     )
     parser.add_argument(
-        "-rk", help="path of a file in which to save the radial kurtosis map.",
+        "-rk", help="path of a file in which to save the radial kurtosis map",
     )
     parser.add_argument(
-        "-s0", help="path of a file in which to save the estimated signal at b=0.",
+        "-s0", help="path of a file in which to save the estimated signal at b=0",
     )
     parser.add_argument(
         "-mk_pred",
-        help="path of a file in which to save the predicted mean kurtosis map.",
+        help="path of a file in which to save the predicted mean kurtosis map",
     )
     parser.add_argument(
         "-ak_pred",
-        help="path of a file in which to save the predicted axial kurtosis map.",
+        help="path of a file in which to save the predicted axial kurtosis map",
     )
     parser.add_argument(
         "-rk_pred",
-        help="path of a file in which to save the predicted radial kurtosis map.",
+        help="path of a file in which to save the predicted radial kurtosis map",
     )
     parser.add_argument(
-        "-fit_status", help="path of a file in which to save the fit status map.",
+        "-fit_status", help="path of a file in which to save the fit status map",
     )
     parser.add_argument(
-        "-params", help="path of a file in which to save the parameters.",
+        "-params", help="path of a file in which to save the parameters",
     )
     args = parser.parse_args()
 
@@ -1028,69 +1228,26 @@ if __name__ == "__main__":
     else:
         mask = None
 
-    # Clean, scale, and clip data
-
-    data[np.isinf(data)] = np.nan
-    data[np.isnan(data)] = 0
-    C = np.nanmean(data[..., np.where(bvals == np.min(bvals))])
-    data /= C
-    min_signal = np.finfo(float).resolution
-    data[data < min_signal] = min_signal
-
-    # Fit model to data with NLLS
-
-    print("Fitting DKI to data with standard NLLS")
-    X = _design_matrix(bvals, bvecs)
-    nlls_params = _nlls_fit(data, X, mask)
-
-    # Predict kurtosis measures
-
-    print("Training a MLP to predict MK")
-    mk = np.clip(_mk(nlls_params, mask), -3 / 7, 10)
-    akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
-    mk_pred, R2 = _predict(data, mk, akc_mask, mask, hidden_layer_sizes=(50, 50))
-    print(f"R^2 on training data for MK = {R2}")
-
-    print("Training a MLP to predict AK")
-    ak = np.clip(_ak(nlls_params, mask), -3 / 7, 10)
-    akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
-    ak_pred, R2 = _predict(data, ak, akc_mask, mask, hidden_layer_sizes=(50, 50))
-    print(f"R^2 on training data for AK = {R2}")
-
-    print("Training a MLP to predict RK")
-    rk = np.clip(_rk(nlls_params, mask), -3 / 7, 10)
-    akc_mask = _akc_mask(_params_to_W(nlls_params), _45_dirs, mask).astype(bool)
-    rk_pred, R2 = _predict(data, rk, akc_mask, mask, hidden_layer_sizes=(50, 50))
-    print(f"R^2 on training data for RK = {R2}")
-
-    # Calculate initial positions
-
-    print("Calculating initial positions")
-    S0 = np.exp(nlls_params[..., 0])
-    D = _params_to_D(nlls_params)
-    x0 = _calculate_x0(S0, D, mk_pred, ak_pred, rk_pred, mask)
-
     # Fit model to data with regularized NLLS
 
-    print("Fitting DKI to data with regularized NLLS")
-    params, fit_status = _reg_nlls_fit(data, X, x0, mk_pred, mask)
+    params, fit_status, mk_pred, ak_pred, rk_pred = fit(data, bvals, bvecs, mask)
 
     # Save results
 
     if args.params:
         nib.save(nib.Nifti1Image(params, affine), args.params)
     if args.md:
-        nib.save(nib.Nifti1Image(_md(params, mask) * 1e-3, affine), args.md)
+        nib.save(nib.Nifti1Image(params_to_md(params, mask) * 1e-3, affine), args.md)
     if args.ad:
-        nib.save(nib.Nifti1Image(_ad(params, mask) * 1e-3, affine), args.ad)
+        nib.save(nib.Nifti1Image(params_to_ad(params, mask) * 1e-3, affine), args.ad)
     if args.rd:
-        nib.save(nib.Nifti1Image(_rd(params, mask) * 1e-3, affine), args.rd)
+        nib.save(nib.Nifti1Image(params_to_rd(params, mask) * 1e-3, affine), args.rd)
     if args.mk:
-        nib.save(nib.Nifti1Image(_mk(params, mask), affine), args.mk)
+        nib.save(nib.Nifti1Image(params_to_mk(params, mask), affine), args.mk)
     if args.ak:
-        nib.save(nib.Nifti1Image(_ak(params, mask), affine), args.ak)
+        nib.save(nib.Nifti1Image(params_to_ak(params, mask), affine), args.ak)
     if args.rk:
-        nib.save(nib.Nifti1Image(_rk(params, mask), affine), args.rk)
+        nib.save(nib.Nifti1Image(params_to_rk(params, mask), affine), args.rk)
     if args.s0:
         nib.save(nib.Nifti1Image(np.exp(params[..., 0] + np.log(C)), affine), args.s0)
     if args.mk_pred:
