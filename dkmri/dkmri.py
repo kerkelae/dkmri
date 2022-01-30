@@ -695,7 +695,7 @@ def _predict(data, m, akc_mask, mask=None):
         mask = np.ones(data.shape[0:-1]).astype(bool)
     X = data[akc_mask]
     y = np.clip(np.nan_to_num(m[akc_mask]), MIN_K, MAX_K)
-    reg = MLPRegressor(random_state=SEED, hidden_layer_sizes=(50, 50)).fit(X, y)
+    reg = MLPRegressor(random_state=SEED, hidden_layer_sizes=(20, 20)).fit(X, y)
     R2 = reg.score(X, y)
     m_pred = np.zeros(mask.shape)
     m_pred[mask] = reg.predict(data[mask])
