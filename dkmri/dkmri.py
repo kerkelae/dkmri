@@ -1003,7 +1003,8 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
     This function does the following:
 
-        1. Remove infinities, nans, and negative values, and normalize data.
+        1. Remove infinities, nans, and negative values, and scale data and
+           b-values.
         2. Estimate DKI model parameters using standard NLLS.
         3. Train a multilayer perceptron to predict kurtosis measures from data
            in voxels where the apparent kurtosis coefficient estimated by the
@@ -1019,8 +1020,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     data : numpy.ndarray
         Floating-point array with shape (..., number of acquisitions).
     bvals : numpy.ndarray
-        Floating-point array with shape (number of acquisitions,). Must be in
-        units of ms/μm^2!
+        Floating-point array with shape (number of acquisitions,).
     bvecs : numpy.ndarray
         Floating-point array with shape (number of acquisitions, 3).
     mask : numpy.ndarray, optional
@@ -1079,10 +1079,12 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
-    C = np.nanmean(data[..., np.where(bvals == np.min(bvals))])
-    data /= C
+    C_data = np.mean(data[..., np.where(bvals == np.min(bvals))])
+    data /= C_data
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
+    C_bvals = np.mean(bvals)
+    bvals /= C_bvals
 
     if not quiet:
         print("Fitting DKI to data with standard NLLS")
@@ -1150,6 +1152,10 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         quiet,
     )
 
+    params[..., 0] += np.log(C_data)
+    params[..., 1:7] /= C_bvals
+    params[..., 7::] /= C_bvals ** 2
+
     return params, fit_status, mk_pred, ak_pred, rk_pred
 
 
@@ -1166,7 +1172,7 @@ if __name__ == "__main__":
         "data", help="path of a NIfTI file with diffusion-weighted data",
     )
     parser.add_argument(
-        "bvals", help="path of a text file with b-values in units of s/mm^2",
+        "bvals", help="path of a text file with b-values",
     )
     parser.add_argument(
         "bvecs", help="path of a text file with b-vectors",
@@ -1255,7 +1261,7 @@ if __name__ == "__main__":
     if args.rk:
         nib.save(nib.Nifti1Image(params_to_rk(params, mask), affine), args.rk)
     if args.s0:
-        nib.save(nib.Nifti1Image(np.exp(params[..., 0] + np.log(C)), affine), args.s0)
+        nib.save(nib.Nifti1Image(np.exp(params[..., 0]), affine), args.s0)
     if args.mk_pred:
         nib.save(nib.Nifti1Image(mk_pred, affine), args.mk_pred)
     if args.ak_pred:
