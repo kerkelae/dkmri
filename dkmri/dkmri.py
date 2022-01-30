@@ -1174,43 +1174,44 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "-md", help="path of a file in which to save the mean diffusivity map"
+        "-md", help="path of a NIfTI file in which to save the mean diffusivity map"
     )
     parser.add_argument(
-        "-ad", help="path of a file in which to save the axial diffusivity map",
+        "-ad", help="path of a NIfTI file in which to save the axial diffusivity map",
     )
     parser.add_argument(
-        "-rd", help="path of a file in which to save the radial diffusivity map",
+        "-rd", help="path of a NIfTI file in which to save the radial diffusivity map",
     )
     parser.add_argument(
-        "-mk", help="path of a file in which to save the mean kurtosis map"
+        "-mk", help="path of a NIfTI file in which to save the mean kurtosis map"
     )
     parser.add_argument(
-        "-ak", help="path of a file in which to save the axial kurtosis map",
+        "-ak", help="path of a NIfTI file in which to save the axial kurtosis map",
     )
     parser.add_argument(
-        "-rk", help="path of a file in which to save the radial kurtosis map",
+        "-rk", help="path of a NIfTI file in which to save the radial kurtosis map",
     )
     parser.add_argument(
-        "-s0", help="path of a file in which to save the estimated signal at b=0",
+        "-s0", help="path of a NIfTI file in which to save the estimated signal at b=0",
     )
     parser.add_argument(
         "-mk_pred",
-        help="path of a file in which to save the predicted mean kurtosis map",
+        help="path of a NIfTI file in which to save the predicted mean kurtosis map",
     )
     parser.add_argument(
         "-ak_pred",
-        help="path of a file in which to save the predicted axial kurtosis map",
+        help="path of a NIfTI file in which to save the predicted axial kurtosis map",
     )
     parser.add_argument(
         "-rk_pred",
-        help="path of a file in which to save the predicted radial kurtosis map",
+        help="path of a NIfTI file in which to save the predicted radial kurtosis map",
     )
     parser.add_argument(
-        "-fit_status", help="path of a file in which to save the fit status map",
+        "-status", help="path of a NIfTI file in which to save the fit status map",
     )
     parser.add_argument(
-        "-params", help="path of a file in which to save the parameters",
+        "-params",
+        help="path of a NIfTI file in which to save the estimated parameters",
     )
     args = parser.parse_args()
 
