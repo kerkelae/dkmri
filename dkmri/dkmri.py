@@ -17,7 +17,6 @@ from sklearn.neural_network import MLPRegressor
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
 
-SEED = 123  # Hard coded for reproducible predictions
 MIN_K = -3 / 7
 MAX_K = 10
 
@@ -672,7 +671,7 @@ def _akc_mask(W, vs, mask):
     return akc_mask
 
 
-def _predict(data, m, akc_mask, mask=None):
+def _predict(data, m, akc_mask, seed, mask=None):
     """Train a multilayer perceptron to predict `m` from `data`.
 
     Parameters
@@ -683,6 +682,9 @@ def _predict(data, m, akc_mask, mask=None):
         Floating-point array.
     akc_mask : numpy.ndarray
         Boolean array.
+    seed : int
+        Seed for pseudo-random number generation to initialize neural network
+        weights.
     mask : numpy.ndarray, optional
         Boolean array.
 
@@ -695,7 +697,7 @@ def _predict(data, m, akc_mask, mask=None):
         mask = np.ones(data.shape[0:-1]).astype(bool)
     X = data[akc_mask]
     y = np.clip(np.nan_to_num(m[akc_mask]), MIN_K, MAX_K)
-    reg = MLPRegressor(random_state=SEED, hidden_layer_sizes=(20, 20)).fit(X, y)
+    reg = MLPRegressor(random_state=seed, hidden_layer_sizes=(20, 20)).fit(X, y)
     R2 = reg.score(X, y)
     m_pred = np.zeros(mask.shape)
     m_pred[mask] = reg.predict(data[mask])
@@ -996,7 +998,7 @@ def _reg_nlls_fit(
     return params, fit_status
 
 
-def fit(data, bvals, bvecs, mask=None, alpha=None, quiet=False):
+def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     """Estimate diffusion and kurtosis tensor elements.
 
     This function does the following:
@@ -1025,7 +1027,10 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, quiet=False):
         Boolean array with the same shape as `data` without the last dimension.
     alpha : float, optional
         Constant controlling regularization term magnitudes in the objective
-        function. 
+        function.
+    seed : int
+        Seed for pseudo-random number generation to initialize neural network
+        weights.
     quiet : bool
         Whether not to print messages about computation progress.
 
@@ -1088,25 +1093,25 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, quiet=False):
     if not quiet:
         print("Training a MLP to predict MK")
     mk = np.clip(params_to_mk(nlls_params, mask), MIN_K, MAX_K)
-    mk_pred, R2 = _predict(data, mk, akc_mask, mask)
+    mk_pred, R2 = _predict(data, mk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for MK = {R2}")
     if not quiet:
         print("Training a MLP to predict MTK")
     mtk = np.clip(_mtk(nlls_params, mask), MIN_K, MAX_K)
-    mtk_pred, R2 = _predict(data, mtk, akc_mask, mask)
+    mtk_pred, R2 = _predict(data, mtk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for MTK = {R2}")
     if not quiet:
         print("Training a MLP to predict AK")
     ak = np.clip(params_to_ak(nlls_params, mask), MIN_K, MAX_K)
-    ak_pred, R2 = _predict(data, ak, akc_mask, mask)
+    ak_pred, R2 = _predict(data, ak, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for AK = {R2}")
     if not quiet:
         print("Training a MLP to predict RK")
     rk = np.clip(params_to_rk(nlls_params, mask), MIN_K, MAX_K)
-    rk_pred, R2 = _predict(data, rk, akc_mask, mask)
+    rk_pred, R2 = _predict(data, rk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for RK = {R2}")
 
