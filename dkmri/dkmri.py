@@ -325,7 +325,7 @@ def params_to_rd(params, mask=None):
 
 
 def params_to_fa(params, mask=None):
-    """Compute fractinal anisotropy.
+    """Compute fractional anisotropy.
 
     Parameters
     ----------
@@ -341,14 +341,14 @@ def params_to_fa(params, mask=None):
     if mask is None:
         mask = np.ones(params.shape[0:-1]).astype(bool)
     evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
-    eval_avg = np.mean(evals, axis=-1)
+    avg_evals = np.mean(evals, axis=-1)
     fa = np.zeros(mask.shape)
     fa[mask] = np.sqrt(
         1.5
         * (
-            (evals[..., 0] - eval_avg) ** 2
-            + (evals[..., 1] - eval_avg) ** 2
-            + (evals[..., 2] - eval_avg) ** 2
+            (evals[..., 0] - avg_evals) ** 2
+            + (evals[..., 1] - avg_evals) ** 2
+            + (evals[..., 2] - avg_evals) ** 2
         )
         / np.sum(evals ** 2, axis=-1)
     )
