@@ -680,7 +680,7 @@ def _nlls_fit(data, design_matrix, mask=None):
 
 @jax.jit
 def _akc_mask(W, vs, mask):
-    """Compute a mask based on 0 < AKC < 10 along all directions in `vs`.
+    """Compute a mask based on condition AKC > 0 along all directions in `vs`.
 
     Parameters
     ----------
@@ -698,7 +698,6 @@ def _akc_mask(W, vs, mask):
     akc_mask = np.ones(mask.shape)
     for v in vs:
         akc_mask *= (v.T @ (v.T @ W @ v) @ v) > 0
-        akc_mask *= (v.T @ (v.T @ W @ v) @ v) < 10
     akc_mask *= mask
     return akc_mask
 
@@ -729,7 +728,9 @@ def _predict(data, m, akc_mask, seed, mask=None):
         mask = np.ones(data.shape[0:-1]).astype(bool)
     X = data[akc_mask]
     y = np.clip(np.nan_to_num(m[akc_mask]), MIN_K, MAX_K)
-    reg = MLPRegressor(random_state=seed, hidden_layer_sizes=(20, 20)).fit(X, y)
+    reg = MLPRegressor(
+        hidden_layer_sizes=(20, 20), max_iter=int(1e3), random_state=seed,
+    ).fit(X, y)
     R2 = reg.score(X, y)
     m_pred = np.zeros(mask.shape)
     m_pred[mask] = reg.predict(data[mask])
