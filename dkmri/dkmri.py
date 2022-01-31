@@ -17,6 +17,7 @@ from sklearn.neural_network import MLPRegressor
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
 
+# Hard-coded lower and upper limit for kurtosis
 MIN_K = -3 / 7
 MAX_K = 10
 
@@ -321,6 +322,37 @@ def params_to_rd(params, mask=None):
     rd = np.zeros(mask.shape)
     rd[mask] = np.mean(evals[:, 0:2], axis=1)
     return rd
+
+
+def params_to_fa(params, mask=None):
+    """Compute fractinal anisotropy.
+
+    Parameters
+    ----------
+    params : numpy.ndarray
+        Floating-point array with shape (..., 22).
+    mask : numpy.ndarray, optional
+        Boolean array.
+
+    Returns
+    -------
+    numpy.ndarray
+    """
+    if mask is None:
+        mask = np.ones(params.shape[0:-1]).astype(bool)
+    evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
+    eval_avg = np.mean(evals, axis=-1)
+    fa = np.zeros(mask.shape)
+    fa[mask] = np.sqrt(
+        1.5
+        * (
+            (evals[..., 0] - eval_avg) ** 2
+            + (evals[..., 1] - eval_avg) ** 2
+            + (evals[..., 2] - eval_avg) ** 2
+        )
+        / np.sum(evals ** 2, axis=-1)
+    )
+    return fa
 
 
 @jax.jit
@@ -1194,6 +1226,10 @@ if __name__ == "__main__":
         "-rd", help="path of a NIfTI file in which to save the radial diffusivity map",
     )
     parser.add_argument(
+        "-fa",
+        help="path of a NIfTI file in which to save the fractional anisotropy map",
+    )
+    parser.add_argument(
         "-mk", help="path of a NIfTI file in which to save the mean kurtosis map"
     )
     parser.add_argument(
@@ -1254,6 +1290,8 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(params_to_ad(params, mask) * 1e-3, affine), args.ad)
     if args.rd:
         nib.save(nib.Nifti1Image(params_to_rd(params, mask) * 1e-3, affine), args.rd)
+    if args.fa:
+        nib.save(nib.Nifti1Image(params_to_fa(params, mask) * 1e-3, affine), args.fa)
     if args.mk:
         nib.save(nib.Nifti1Image(params_to_mk(params, mask), affine), args.mk)
     if args.ak:
