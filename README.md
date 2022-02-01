@@ -10,7 +10,9 @@ metrics. Details can be found in the upcoming publication and
 
 ## Installation
 
-`dkmri.py` can be installed with [pip](https://pypi.org/):
+You need to have [Python](https://www.python.org/) and [pip](https://pypi.org/)
+installed. Then, you can install `dkmri.py` by executing the following on the
+command line:
 
 ```
 pip install dkmri
