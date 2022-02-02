@@ -1114,11 +1114,11 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
     C_data = np.mean(data[mask][np.where(bvals == np.min(bvals))])
-    data /= C_data
+    data = data / C_data
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
     C_bvals = np.mean(bvals)
-    bvals /= C_bvals
+    bvals = bvals / C_bvals
 
     if not quiet:
         print("Fitting DKI to data with standard NLLS")
