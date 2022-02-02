@@ -1110,6 +1110,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
+    data = data.astype(float)
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
     C_data = np.mean(data[..., np.where(bvals == np.min(bvals))])
