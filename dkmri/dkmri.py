@@ -1113,7 +1113,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     data = data.astype(float)
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
-    C_data = np.mean(data[..., np.where(bvals == np.min(bvals))])
+    C_data = np.mean(data[mask][np.where(bvals == np.min(bvals))])
     data /= C_data
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
