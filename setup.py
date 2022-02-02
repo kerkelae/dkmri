@@ -5,7 +5,7 @@ long_description = (Path(__file__).parent / "README.md").read_text()
 
 setup(
     name="dkmri",
-    version="0.0.5",
+    version="0.0.6dev",
     description="Reproducible and efficient diffusion kurtosis imaging in Python.",
     url="https://github.com/kerkelae/dkmri",
     author="Leevi Kerkelä",
