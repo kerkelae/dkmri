@@ -1031,6 +1031,91 @@ def _reg_nlls_fit(
     return params, fit_status
 
 
+class FitResult:
+    """Class for storing the regularized NLLS fit results.
+
+    Attributes
+    ----------
+    params : numpy.ndarray
+        Estimated model parameters.
+    status : numpy.ndarray
+        Codes returned by the optimizer in each voxel where it was run. 0 means
+        converged succesfully, 1 means maximum BFGS iterations reached, 3 means
+        zoom failed, 4 means saddle point reached, 5 means maximum line search
+        iterations reached, and -1 means undefined.
+    mk_pred : numpy.ndarray
+        Predicted mean kurtosis map.
+    ak_pred : numpy.ndarray
+        Predicted axial kurtosis map.
+    rk_pred : numpy.ndarray
+        Predicted radial kurtosis map.
+    mask : numpy.ndarray
+        Mask defining voxels in which the parameters were estimated.
+    params_nlls : numpy.ndarray
+        Parameter estimates by the standard NLLS fit.
+    akc_mask : nump.ndarray
+        Mask defining voxels in which AKC computed from the standard NLLS fit
+        results was positive along all directions.
+    x0 : numpy.ndarray
+        Initial positions of the regularized NLLS fit.
+    alpha : float
+        Value of the constant controlling the magnitude of regularization terms
+        in the regularized NLLS fit.
+
+    Notes
+    -----
+    The model parameters are the following:
+
+            params[..., 0] = log(S0)
+            params[..., 1] = D_xx
+            params[..., 2] = D_yy
+            params[..., 3] = D_zz
+            params[..., 4] = D_xy
+            params[..., 5] = D_xz
+            params[..., 6] = D_yz
+            params[..., 7] = W_xxxx * MD ** 2
+            params[..., 8] = W_yyyy * MD ** 2
+            params[..., 9] = W_zzzz * MD ** 2
+            params[..., 10] = W_xxxy * MD ** 2
+            params[..., 11] = W_xxxz * MD ** 2
+            params[..., 12] = W_yyyx * MD ** 2
+            params[..., 13] = W_yyyz * MD ** 2
+            params[..., 14] = W_zzzx * MD ** 2
+            params[..., 15] = W_zzzy * MD ** 2
+            params[..., 16] = W_xxyy * MD ** 2
+            params[..., 17] = W_xxzz * MD ** 2
+            params[..., 18] = W_yyzz * MD ** 2
+            params[..., 19] = W_xxyz * MD ** 2
+            params[..., 20] = W_yyxz * MD ** 2
+            params[..., 21] = W_zzxy * MD ** 2
+    """
+
+    def __init__(
+        self,
+        params,
+        status,
+        mk_pred,
+        ak_pred,
+        rk_pred,
+        mask,
+        params_nlls,
+        akc_mask,
+        x0,
+        alpha,
+    ):
+        self.params = params
+        self.status = status
+        self.mk_pred = mk_pred
+        self.ak_pred = ak_pred
+        self.rk_pred = rk_pred
+        self.mask = mask
+        self.params_nlls = params_nlls
+        self.akc_mask = akc_mask
+        self.x0 = x0
+        self.alpha = alpha
+        return
+
+
 def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     """Estimate diffusion and kurtosis tensor elements.
 
@@ -1041,7 +1126,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         2. Estimate DKI model parameters using standard NLLS.
         3. Train a multilayer perceptron to predict kurtosis measures from data
            in voxels where the apparent kurtosis coefficient estimated by the
-           NLLS fit was > 0 and < 10 along all directions.
+           NLLS fit was > 0.
         4. Estimate model parameters using regularized NLLS where the
            regularization terms increase the objective function value when
            MK, AK, and RK deviate from their predicted values. Axially
@@ -1069,52 +1154,16 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
     Returns
     -------
-    params : numpy.ndarray
-        Estimated model parameters:
-
-            params[..., 0] = log(S0)
-            params[..., 1] = D_xx
-            params[..., 2] = D_yy
-            params[..., 3] = D_zz
-            params[..., 4] = D_xy
-            params[..., 5] = D_xz
-            params[..., 6] = D_yz
-            params[..., 7] = W_xxxx * MD ** 2
-            params[..., 8] = W_yyyy * MD ** 2
-            params[..., 9] = W_zzzz * MD ** 2
-            params[..., 10] = W_xxxy * MD ** 2
-            params[..., 11] = W_xxxz * MD ** 2
-            params[..., 12] = W_yyyx * MD ** 2
-            params[..., 13] = W_yyyz * MD ** 2
-            params[..., 14] = W_zzzx * MD ** 2
-            params[..., 15] = W_zzzy * MD ** 2
-            params[..., 16] = W_xxyy * MD ** 2
-            params[..., 17] = W_xxzz * MD ** 2
-            params[..., 18] = W_yyzz * MD ** 2
-            params[..., 19] = W_xxyz * MD ** 2
-            params[..., 20] = W_yyxz * MD ** 2
-            params[..., 21] = W_zzxy * MD ** 2
-       
-    fit_status : numpy.ndarray
-        Codes returned by the optimizer in each voxel where it was run. 0 means
-        converged succesfully, 1 means maximum BFGS iterations reached, 3 means
-        zoom failed, 4 means saddle point reached, 5 means maximum line search
-        iterations reached, and -1 means undefined.
-    mk_pred : numpy.ndarray
-        The predicted mean kurtosis map.
-    ak_pred : numpy.ndarray
-        The predicted axial kurtosis map.
-    rk_pred : numpy.ndarray
-        The predicted radial kurtosis map.
+    dkmri.FitResult
     """
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
     data = data.astype(float)
+    C_data = np.nanmean(data[mask][np.where(bvals == np.min(bvals))])
+    data = data / C_data
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
-    C_data = np.mean(data[mask][np.where(bvals == np.min(bvals))])
-    data = data / C_data
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
     C_bvals = np.mean(bvals)
@@ -1123,30 +1172,30 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     if not quiet:
         print("Fitting DKI to data with standard NLLS")
     X = design_matrix(bvals, bvecs)
-    nlls_params = _nlls_fit(data, X, mask)
+    params_nlls = _nlls_fit(data, X, mask)
 
-    akc_mask = _akc_mask(params_to_W(nlls_params), _45_dirs, mask).astype(bool)
+    akc_mask = _akc_mask(params_to_W(params_nlls), _45_dirs, mask).astype(bool)
     if not quiet:
         print("Training a MLP to predict MK")
-    mk = np.clip(params_to_mk(nlls_params, mask), MIN_K, MAX_K)
+    mk = np.clip(params_to_mk(params_nlls, mask), MIN_K, MAX_K)
     mk_pred, R2 = _predict(data, mk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for MK = {R2}")
     if not quiet:
         print("Training a MLP to predict MTK")
-    mtk = np.clip(_mtk(nlls_params, mask), MIN_K, MAX_K)
+    mtk = np.clip(_mtk(params_nlls, mask), MIN_K, MAX_K)
     mtk_pred, R2 = _predict(data, mtk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for MTK = {R2}")
     if not quiet:
         print("Training a MLP to predict AK")
-    ak = np.clip(params_to_ak(nlls_params, mask), MIN_K, MAX_K)
+    ak = np.clip(params_to_ak(params_nlls, mask), MIN_K, MAX_K)
     ak_pred, R2 = _predict(data, ak, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for AK = {R2}")
     if not quiet:
         print("Training a MLP to predict RK")
-    rk = np.clip(params_to_rk(nlls_params, mask), MIN_K, MAX_K)
+    rk = np.clip(params_to_rk(params_nlls, mask), MIN_K, MAX_K)
     rk_pred, R2 = _predict(data, rk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for RK = {R2}")
@@ -1158,7 +1207,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     radial_dirs = np.zeros(mask.shape + (10, 3))
     radial_dirs_flat = radial_dirs[mask]
     size = len(radial_dirs_flat)
-    _, evecs = np.linalg.eigh(np.nan_to_num(params_to_D(nlls_params)))
+    _, evecs = np.linalg.eigh(np.nan_to_num(params_to_D(params_nlls)))
     evecs_flat = evecs[mask]
     for i in range(size):
         axial_dirs_flat[i] = evecs_flat[i, :, 2].T
@@ -1166,8 +1215,8 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         radial_dirs_flat[i] = (R @ _10_dirs.T).T
     axial_dirs[mask] = axial_dirs_flat
     radial_dirs[mask] = radial_dirs_flat
-    S0 = np.exp(nlls_params[..., 0])
-    D = params_to_D(nlls_params)
+    S0 = np.exp(params_nlls[..., 0])
+    D = params_to_D(params_nlls)
     x0 = _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask)
 
     if not quiet:
@@ -1190,7 +1239,18 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     params[..., 1:7] /= C_bvals
     params[..., 7::] /= C_bvals ** 2
 
-    return params, fit_status, mk_pred, ak_pred, rk_pred
+    return FitResult(
+        params,
+        fit_status,
+        mk_pred,
+        ak_pred,
+        rk_pred,
+        mask,
+        params_nlls,
+        akc_mask,
+        x0,
+        alpha,
+    )
 
 
 if __name__ == "__main__":
@@ -1256,7 +1316,7 @@ if __name__ == "__main__":
         help="path of a NIfTI file in which to save the predicted radial kurtosis map",
     )
     parser.add_argument(
-        "-status", help="path of a NIfTI file in which to save the fit status map",
+        "-fit_status", help="path of a NIfTI file in which to save the fit status map",
     )
     parser.add_argument(
         "-params",
@@ -1269,7 +1329,7 @@ if __name__ == "__main__":
     data_img = nib.load(args.data)
     data = data_img.get_fdata()
     affine = data_img.affine
-    bvals = np.loadtxt(args.bvals) * 1e-3
+    bvals = np.loadtxt(args.bvals)
     bvecs = np.loadtxt(args.bvecs)
     if bvecs.ndim == 2 and bvecs.shape[0] == 3:
         bvecs = bvecs.T
@@ -1280,34 +1340,48 @@ if __name__ == "__main__":
 
     # Fit model to data with regularized NLLS
 
-    params, fit_status, mk_pred, ak_pred, rk_pred = fit(data, bvals, bvecs, mask)
+    fit_result = fit(data, bvals, bvecs, mask)
 
     # Save results
 
     if args.params:
-        nib.save(nib.Nifti1Image(params, affine), args.params)
+        nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
     if args.md:
-        nib.save(nib.Nifti1Image(params_to_md(params, mask) * 1e-3, affine), args.md)
+        nib.save(
+            nib.Nifti1Image(params_to_md(fit_result.params, mask), affine), args.md,
+        )
     if args.ad:
-        nib.save(nib.Nifti1Image(params_to_ad(params, mask) * 1e-3, affine), args.ad)
+        nib.save(
+            nib.Nifti1Image(params_to_ad(fit_result.params, mask), affine), args.ad,
+        )
     if args.rd:
-        nib.save(nib.Nifti1Image(params_to_rd(params, mask) * 1e-3, affine), args.rd)
+        nib.save(
+            nib.Nifti1Image(params_to_rd(fit_result.params, mask), affine), args.rd,
+        )
     if args.fa:
-        nib.save(nib.Nifti1Image(params_to_fa(params, mask) * 1e-3, affine), args.fa)
+        nib.save(
+            nib.Nifti1Image(params_to_fa(fit_result.params, mask), affine), args.fa,
+        )
     if args.mk:
-        nib.save(nib.Nifti1Image(params_to_mk(params, mask), affine), args.mk)
+        nib.save(
+            nib.Nifti1Image(params_to_mk(fit_result.params, mask), affine), args.mk
+        )
     if args.ak:
-        nib.save(nib.Nifti1Image(params_to_ak(params, mask), affine), args.ak)
+        nib.save(
+            nib.Nifti1Image(params_to_ak(fit_result.params, mask), affine), args.ak
+        )
     if args.rk:
-        nib.save(nib.Nifti1Image(params_to_rk(params, mask), affine), args.rk)
+        nib.save(
+            nib.Nifti1Image(params_to_rk(fit_result.params, mask), affine), args.rk
+        )
     if args.s0:
-        nib.save(nib.Nifti1Image(np.exp(params[..., 0]), affine), args.s0)
+        nib.save(nib.Nifti1Image(np.exp(fit_result.params[..., 0]), affine), args.s0)
     if args.mk_pred:
-        nib.save(nib.Nifti1Image(mk_pred, affine), args.mk_pred)
+        nib.save(nib.Nifti1Image(fit_result.mk_pred, affine), args.mk_pred)
     if args.ak_pred:
-        nib.save(nib.Nifti1Image(ak_pred, affine), args.ak_pred)
+        nib.save(nib.Nifti1Image(fit_result.ak_pred, affine), args.ak_pred)
     if args.rk_pred:
-        nib.save(nib.Nifti1Image(rk_pred, affine), args.rk_pred)
+        nib.save(nib.Nifti1Image(fit_result.rk_pred, affine), args.rk_pred)
     if args.fit_status:
-        nib.save(nib.Nifti1Image(fit_status, affine), args.fit_status)
+        nib.save(nib.Nifti1Image(fit_result.status, affine), args.fit_status)
 
