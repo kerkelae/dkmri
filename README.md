@@ -1,29 +1,33 @@
 # `dkmri.py`
 
-`dkmri.py` stands for diffusion kurtosis magnetic resonance imaging in Python.
-It is a Python package for estimating diffusion and kurtosis tensors from 
-diffusion-weighted magnetic resonance data. The estimation is performed using
-regularized non-linear optimization informed by fully-connected feed-forward
-neural networks that are trained to learn the mapping from data to kurtosis
-metrics. Details can be found in the upcoming publication and
-[source code](https://github.com/kerkelae/dkmri/blob/main/dkmri/dkmri.py).
+`dkmri.py` stands for diffusion kurtosis magnetic resonance imaging in Python. It is a Python package for estimating diffusion and kurtosis tensors from diffusion-weighted magnetic resonance data. The estimation is performed using regularized non-linear optimization informed by fully-connected feed-forward neural networks that are trained to learn the mapping from data to kurtosis metrics. Details can be found in the upcoming publication and [source code](https://github.com/kerkelae/dkmri/blob/main/dkmri/dkmri.py).
+
+This software can be used from the command line or in a Python interpreter.
+
+- The command-line interface does not require any knowledge about Python.
+- Python interface is for people comfortable with basic Python programming.
 
 ## Installation
 
-You need to have [Python](https://www.python.org/) and [pip](https://pypi.org/)
-installed. Then, you can install `dkmri.py` by executing the following on the
-command line:
+First, make sure you have installed [Python](https://www.python.org/downloads/).
+
+If you just want to use the command-line interface, the recommended way of installing `dkmri.py` is to use [pipx](https://github.com/pypa/pipx/#install-pipx):
+
+```
+pipx install dkmri
+```
+
+pipx automatically creates an isolated environment in which the dependencies are installed.
+
+If you want to use the Python interface, you can use [pip](https://pip.pypa.io/en/stable/) (you should install `dkmri.py` in an isolated environment using [venv](https://docs.python.org/3/library/venv.html) or [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html) to avoid dependency issues):
 
 ```
 pip install dkmri
 ```
 
-## Usage example
 
-This software can be used from the command line or in a Python interpreter. The
-command-line interface does not require any knowledge about Python, whereas the
-Python interface is made for people who are comfortable with basic Python
-programming.
+
+## Usage example
 
 ### Command-line interface
 
