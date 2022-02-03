@@ -1160,7 +1160,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
     data = data.astype(float)
-    C_data = np.nanmean(data[mask][np.where(bvals == np.min(bvals))])
+    C_data = np.nanmean(data[mask][..., np.where(bvals == np.min(bvals))])
     data = data / C_data
     data[np.isinf(data)] = np.nan
     data[np.isnan(data)] = 0
