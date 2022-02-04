@@ -1022,6 +1022,8 @@ def _reg_nlls_fit(
         results = jit_minimize(i)
         params_flat[i] = results.x
         fit_status_flat[i] = results.status
+    if not quiet:
+        print("100%")
 
     params = np.zeros(mask.shape + (22,))
     params[mask] = params_flat
@@ -1174,27 +1176,17 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     X = design_matrix(bvals, bvecs)
     params_nlls = _nlls_fit(data, X, mask)
 
-    akc_mask = _akc_mask(params_to_W(params_nlls), _45_dirs, mask).astype(bool)
     if not quiet:
-        print("Training a MLP to predict MK")
+        print("Training neural networks to predict kurtosis maps")
+    akc_mask = _akc_mask(params_to_W(params_nlls), _45_dirs, mask).astype(bool)
     mk = np.clip(params_to_mk(params_nlls, mask), MIN_K, MAX_K)
     mk_pred, R2 = _predict(data, mk, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for MK = {R2}")
-    if not quiet:
-        print("Training a MLP to predict MTK")
-    mtk = np.clip(_mtk(params_nlls, mask), MIN_K, MAX_K)
-    mtk_pred, R2 = _predict(data, mtk, akc_mask, seed, mask)
-    if not quiet:
-        print(f"R^2 on training data for MTK = {R2}")
-    if not quiet:
-        print("Training a MLP to predict AK")
     ak = np.clip(params_to_ak(params_nlls, mask), MIN_K, MAX_K)
     ak_pred, R2 = _predict(data, ak, akc_mask, seed, mask)
     if not quiet:
         print(f"R^2 on training data for AK = {R2}")
-    if not quiet:
-        print("Training a MLP to predict RK")
     rk = np.clip(params_to_rk(params_nlls, mask), MIN_K, MAX_K)
     rk_pred, R2 = _predict(data, rk, akc_mask, seed, mask)
     if not quiet:
@@ -1217,6 +1209,8 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     radial_dirs[mask] = radial_dirs_flat
     S0 = np.exp(params_nlls[..., 0])
     D = params_to_D(params_nlls)
+    mtk = np.clip(_mtk(params_nlls, mask), MIN_K, MAX_K)
+    mtk_pred, _ = _predict(data, mtk, akc_mask, seed, mask)
     x0 = _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask)
 
     if not quiet:
