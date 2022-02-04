@@ -1119,16 +1119,16 @@ class FitResult:
 
 
 def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
-    """Estimate diffusion and kurtosis tensor elements.
+    """Estimate diffusion and kurtosis tensor elements from data.
 
     This function does the following:
 
-        1. Remove infinities, nans, and negative values, and scale data and
-           b-values.
-        2. Estimate DKI model parameters using standard NLLS.
-        3. Train a multilayer perceptron to predict kurtosis measures from data
-           in voxels where the apparent kurtosis coefficient estimated by the
-           NLLS fit was > 0.
+        1. Remove infinities, nans, and negative values in `data`, and scale
+           values in `data` and `bvals`.
+        2. Estimate model parameters using standard NLLS.
+        3. Train multilayer perceptrons to predict kurtosis measures from data
+           in voxels where the apparent kurtosis coefficient computed from the
+           NLLS fit results is non-negative along all directions.
         4. Estimate model parameters using regularized NLLS where the
            regularization terms increase the objective function value when
            MK, AK, and RK deviate from their predicted values. Axially
@@ -1147,17 +1147,20 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         Boolean array with the same shape as `data` without the last dimension.
     alpha : float, optional
         Constant controlling regularization term magnitudes in the objective
-        function.
-    seed : int
+        function. If not given, `alpha` is equal to the 0.1 times median
+        squared error of the standard NLLS fit divided by the median squared
+        error of the MK prediction.
+    seed : int, optional
         Seed for pseudo-random number generation to initialize neural network
         weights.
-    quiet : bool
+    quiet : bool, optional
         Whether not to print messages about computation progress.
 
     Returns
     -------
     dkmri.FitResult
     """
+
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
@@ -1168,6 +1171,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     data[np.isnan(data)] = 0
     min_signal = np.finfo(float).resolution
     data[data < min_signal] = min_signal
+
     C_bvals = np.mean(bvals)
     bvals = bvals / C_bvals
 
