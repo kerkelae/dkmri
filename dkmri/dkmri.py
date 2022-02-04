@@ -342,6 +342,8 @@ def params_to_fa(params, mask=None):
         mask = np.ones(params.shape[0:-1]).astype(bool)
     evals, _ = np.linalg.eigh(np.nan_to_num(params_to_D(params[mask])))
     avg_evals = np.mean(evals, axis=-1)
+    sum_sq_evals = np.sum(evals ** 2, axis=-1)
+    sum_sq_evals[sum_sq_evals == 0] = np.nan  # To avoid warnings for dividing by zero
     fa = np.zeros(mask.shape)
     fa[mask] = np.sqrt(
         1.5
@@ -350,7 +352,7 @@ def params_to_fa(params, mask=None):
             + (evals[..., 1] - avg_evals) ** 2
             + (evals[..., 2] - avg_evals) ** 2
         )
-        / np.sum(evals ** 2, axis=-1)
+        / sum_sq_evals
     )
     return fa
 
@@ -680,7 +682,7 @@ def _nlls_fit(data, design_matrix, mask=None):
 
 @jax.jit
 def _akc_mask(W, vs, mask):
-    """Compute a mask based on condition AKC > 0 along all directions in `vs`.
+    """Compute a mask based on condition AKC >= 0 along all directions in `vs`.
 
     Parameters
     ----------
@@ -727,7 +729,7 @@ def _predict(data, m, akc_mask, seed, mask=None):
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
     X = data[akc_mask]
-    y = np.clip(np.nan_to_num(m[akc_mask]), MIN_K, MAX_K)
+    y = m[akc_mask]
     reg = MLPRegressor(
         hidden_layer_sizes=(20, 20), max_iter=int(1e3), random_state=seed,
     ).fit(X, y)
@@ -755,7 +757,9 @@ def signal(params, design_matrix, mask=None):
     """
     if mask is None:
         mask = np.ones(params.shape[0:-1]).astype(bool)
-    S_hat = np.exp(design_matrix @ params[..., np.newaxis])[..., 0]
+    XB = design_matrix @ params[..., np.newaxis]
+    XB[XB > 200] = np.inf  # To avoid overflow warnings
+    S_hat = np.exp(XB)[..., 0]
     S_hat[~mask] = 0
     return S_hat
 
@@ -797,7 +801,6 @@ def _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask=None):
 
     @numba.njit
     def p(u):
-        """Return tensor P."""
         P = np.zeros((3, 3, 3, 3))
         for i in range(3):
             for j in range(3):
@@ -808,7 +811,6 @@ def _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask=None):
 
     @numba.njit
     def d(i, j):
-        """Kronecker delta."""
         if i == j:
             return 1
         else:
@@ -816,7 +818,6 @@ def _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask=None):
 
     @numba.njit
     def q(u):
-        """Return tensor Q."""
         Q = np.zeros((3, 3, 3, 3))
         for i in range(3):
             for j in range(3):
@@ -843,27 +844,21 @@ def _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask=None):
 
     x0_flat = np.zeros((size, 22))
     for i in range(size):
-
         u = evecs[i, :, 2]
-
         md = np.mean(evals[i, :])
         ad = evals[i, 2]
         rd = np.mean(evals[i, 0:2])
         if rd < 0.1:
             rd = 0.1
-
         mtk = mtk_pred_flat[i]
         atk = ak_pred_flat[i] * ad ** 2 / md ** 2
         rtk = rk_pred_flat[i] * rd ** 2 / md ** 2
-
         D = rd * np.eye(3) + (ad - rd) * u[:, np.newaxis] @ u[np.newaxis, :]
-
         W = (
             0.5 * (10 * rtk + 5 * atk - 15 * mtk) * p(u)
             + rtk * I
             + 1.5 * (5 * mtk - atk - 4 * rtk) * q(u)
         )
-
         x0_flat[i, 0] = np.log(S0_flat[i])
         x0_flat[i, 1] = D[0, 0]
         x0_flat[i, 2] = D[1, 1]
@@ -927,11 +922,11 @@ def _reg_nlls_fit(
         Floating-point array with shape (..., 1, 3).
     radial_dirs : numpy.ndarray
         Floating-point array with shape (..., 10, 3).
-    alpha : float
+    alpha : float, optional
         Constant controlling regularization term magnitude.
     mask : numpy.ndarray, optional
         Boolean array.
-    quiet : bool
+    quiet : bool, optional
         Whether not to print messages about computation progress.
 
     Returns
@@ -943,6 +938,15 @@ def _reg_nlls_fit(
     if mask is None:
         mask = np.ones(data.shape[0:-1]).astype(bool)
 
+    if alpha is None:
+        mse_dki = np.median(
+            np.mean((signal(x0[mask], design_matrix) - data[mask]) ** 2, axis=1)
+        )
+        mse_mk = np.median((mk_pred[mask] - params_to_mk(x0[mask])) ** 2)
+        alpha = 0.1 * mse_dki / mse_mk
+    if not quiet:
+        print(f"alpha = {np.round(alpha, 5)}")
+
     data_flat = jnp.asarray(data[mask])
     design_matrix = jnp.asarray(design_matrix)
     x0_flat = jnp.asarray(x0[mask])
@@ -953,17 +957,6 @@ def _reg_nlls_fit(
     axial_dirs_flat = jnp.asarray(axial_dirs[mask])
     radial_dirs_flat = jnp.asarray(radial_dirs[mask])
     size = len(data_flat)
-
-    if alpha is None:
-        mse_dki = np.median(
-            np.mean((signal(x0_flat, design_matrix) - data_flat) ** 2, axis=1)
-        )
-        mse_mk = np.median((mk_pred[mask] - params_to_mk(x0_flat)) ** 2)
-        alpha = 0.1 * mse_dki / mse_mk
-    if not quiet:
-        print(f"alpha = {alpha}")
-
-    rd_flat = jnp.asarray(params_to_rd(x0, mask)[mask])
 
     @jax.jit
     def cost(
@@ -977,7 +970,6 @@ def _reg_nlls_fit(
         rk_pred,
         axial_dir,
         radial_dirs,
-        rd,
     ):
         return (
             jnp.mean((jnp.exp(design_matrix @ params) - y) ** 2)
@@ -985,9 +977,6 @@ def _reg_nlls_fit(
             + alpha * (jnp.mean(_akc(params, axial_dir)) - ak_pred) ** 2
             + alpha * (jnp.mean(_akc(params, radial_dirs)) - rk_pred) ** 2
         )
-
-    jac = jax.jit(jax.jacfwd(cost))
-    hess = jax.jit(jax.jacfwd(jax.jacrev(cost)))
 
     @jax.jit
     def jit_minimize(i):
@@ -1004,18 +993,17 @@ def _reg_nlls_fit(
                 rk_pred_flat[i],
                 axial_dirs_flat[i],
                 radial_dirs_flat[i],
-                rd_flat[i],
             ),
             method="BFGS",
             options={
                 "maxiter": int(1e4),
-                "line_search_maxiter": int(1e3),
-                "gtol": 1e-3,
+                "line_search_maxiter": int(1e4),
+                "gtol": 1e-4,
             },
         )
 
-    status_flat = np.zeros(size)
     params_flat = np.zeros((size, 22))
+    status_flat = np.zeros(size)
     for i in range(size):
         if not quiet:
             print(f"{int(i/size*100)}%", end="\r")
@@ -1183,18 +1171,18 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     if not quiet:
         print("Training neural networks to predict kurtosis maps")
     akc_mask = _akc_mask(params_to_W(params_nlls), _45_dirs, mask).astype(bool)
-    mk = np.clip(params_to_mk(params_nlls, mask), MIN_K, MAX_K)
+    mk = np.clip(np.nan_to_num(params_to_mk(params_nlls, mask)), MIN_K, MAX_K)
     mk_pred, R2 = _predict(data, mk, akc_mask, seed, mask)
     if not quiet:
-        print(f"R^2 on training data for MK = {R2}")
-    ak = np.clip(params_to_ak(params_nlls, mask), MIN_K, MAX_K)
+        print(f"R^2 = {np.round(R2, 5)} for MK")
+    ak = np.clip(np.nan_to_num(params_to_ak(params_nlls, mask)), MIN_K, MAX_K)
     ak_pred, R2 = _predict(data, ak, akc_mask, seed, mask)
     if not quiet:
-        print(f"R^2 on training data for AK = {R2}")
-    rk = np.clip(params_to_rk(params_nlls, mask), MIN_K, MAX_K)
+        print(f"R^2 = {np.round(R2, 5)} for AK")
+    rk = np.clip(np.nan_to_num(params_to_rk(params_nlls, mask)), MIN_K, MAX_K)
     rk_pred, R2 = _predict(data, rk, akc_mask, seed, mask)
     if not quiet:
-        print(f"R^2 on training data for RK = {R2}")
+        print(f"R^2 = {np.round(R2, 5)} for RK")
 
     if not quiet:
         print("Calculating initial positions")
@@ -1213,7 +1201,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     radial_dirs[mask] = radial_dirs_flat
     S0 = np.exp(params_nlls[..., 0])
     D = params_to_D(params_nlls)
-    mtk = np.clip(_mtk(params_nlls, mask), MIN_K, MAX_K)
+    mtk = np.clip(np.nan_to_num(_mtk(params_nlls, mask)), MIN_K, MAX_K)
     mtk_pred, _ = _predict(data, mtk, akc_mask, seed, mask)
     x0 = _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask)
 
@@ -1236,6 +1224,14 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     params[..., 0] += np.log(C_data)
     params[..., 1:7] /= C_bvals
     params[..., 7::] /= C_bvals ** 2
+
+    params_nlls[..., 0] += np.log(C_data)
+    params_nlls[..., 1:7] /= C_bvals
+    params_nlls[..., 7::] /= C_bvals ** 2
+
+    x0[..., 0] += np.log(C_data)
+    x0[..., 1:7] /= C_bvals
+    x0[..., 7::] /= C_bvals ** 2
 
     return FitResult(
         params,
