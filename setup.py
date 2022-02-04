@@ -6,7 +6,7 @@ requirements = (Path(__file__).parent / "requirements.txt").read_text().split("\
 
 setup(
     name="dkmri",
-    version="0.0.6",
+    version="0.0.7dev",
     description="Reproducible and efficient diffusion kurtosis imaging in Python.",
     url="https://github.com/kerkelae/dkmri",
     author="Leevi Kerkelä",
