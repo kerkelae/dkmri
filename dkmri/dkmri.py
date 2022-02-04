@@ -697,7 +697,7 @@ def _akc_mask(W, vs, mask):
     """
     akc_mask = np.ones(mask.shape)
     for v in vs:
-        akc_mask *= (v.T @ (v.T @ W @ v) @ v) > 0
+        akc_mask *= (v.T @ (v.T @ W @ v) @ v) >= 0
     akc_mask *= mask
     return akc_mask
 
@@ -1052,12 +1052,12 @@ class FitResult:
     rk_pred : numpy.ndarray
         Predicted radial kurtosis map.
     mask : numpy.ndarray
-        Mask defining voxels in which the parameters were estimated.
+        Mask defining voxels in which the fit was run.
     params_nlls : numpy.ndarray
         Parameter estimates by the standard NLLS fit.
     akc_mask : nump.ndarray
         Mask defining voxels in which AKC computed from the standard NLLS fit
-        results was positive along all directions.
+        results was non-negative along all directions.
     x0 : numpy.ndarray
         Initial positions of the regularized NLLS fit.
     alpha : float
