@@ -937,7 +937,7 @@ def _reg_nlls_fit(
     Returns
     -------
     params : numpy.ndarray
-    fit_status : numpy.ndarray
+    status : numpy.ndarray
     """
 
     if mask is None:
@@ -1014,23 +1014,23 @@ def _reg_nlls_fit(
             },
         )
 
-    fit_status_flat = np.zeros(size)
+    status_flat = np.zeros(size)
     params_flat = np.zeros((size, 22))
     for i in range(size):
         if not quiet:
             print(f"{int(i/size*100)}%", end="\r")
         results = jit_minimize(i)
         params_flat[i] = results.x
-        fit_status_flat[i] = results.status
+        status_flat[i] = results.status
     if not quiet:
         print("100%")
 
     params = np.zeros(mask.shape + (22,))
     params[mask] = params_flat
-    fit_status = np.zeros(mask.shape)
-    fit_status[mask] = fit_status_flat
+    status = np.zeros(mask.shape)
+    status[mask] = status_flat
 
-    return params, fit_status
+    return params, status
 
 
 class FitResult:
@@ -1215,7 +1215,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
     if not quiet:
         print("Fitting DKI to data with regularized NLLS")
-    params, fit_status = _reg_nlls_fit(
+    params, status = _reg_nlls_fit(
         data,
         X,
         x0,
@@ -1235,7 +1235,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
     return FitResult(
         params,
-        fit_status,
+        status,
         mk_pred,
         ak_pred,
         rk_pred,
@@ -1249,11 +1249,14 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
 
 if __name__ == "__main__":
 
-    # Parse arguments
-
     parser = argparse.ArgumentParser(
         description=(
-            "Estimate diffusion and kurtosis tensors, and compute parameter maps"
+            """Estimate diffusion kurtosis imaging parameters and compute parameter maps.
+            The command for using dkmri.py is "dkmri.py data bvals bvecs
+            optional-arguments", where data, bvals, and bvecs are the paths of the files
+            containing the diffusion-weighted data, b-values, and b-vectors, and
+            optional-arguments is where to define things such as which parameter maps to
+            save. Visit https://github.com/kerkelae/dkmri for more info."""
         )
     )
     parser.add_argument(
@@ -1268,8 +1271,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-mask",
         help=(
-            "path of a NIfTI file with a binary mask definining the voxels where to "
-            "estimate the tensors"
+            "path of a NIfTI file with a mask definining where to estimate parameters"
         ),
     )
     parser.add_argument(
@@ -1310,15 +1312,14 @@ if __name__ == "__main__":
         help="path of a NIfTI file in which to save the predicted radial kurtosis map",
     )
     parser.add_argument(
-        "-fit_status", help="path of a NIfTI file in which to save the fit status map",
+        "-status",
+        help="path of a NIfTI file in which to save the codes returned by the optimizer",
     )
     parser.add_argument(
         "-params",
         help="path of a NIfTI file in which to save the estimated parameters",
     )
     args = parser.parse_args()
-
-    # Load data
 
     data_img = nib.load(args.data)
     data = data_img.get_fdata()
@@ -1332,14 +1333,8 @@ if __name__ == "__main__":
     else:
         mask = None
 
-    # Fit model to data with regularized NLLS
-
     fit_result = fit(data, bvals, bvecs, mask)
 
-    # Save results
-
-    if args.params:
-        nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
     if args.md:
         nib.save(
             nib.Nifti1Image(params_to_md(fit_result.params, mask), affine), args.md,
@@ -1376,6 +1371,7 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(fit_result.ak_pred, affine), args.ak_pred)
     if args.rk_pred:
         nib.save(nib.Nifti1Image(fit_result.rk_pred, affine), args.rk_pred)
-    if args.fit_status:
-        nib.save(nib.Nifti1Image(fit_result.status, affine), args.fit_status)
-
+    if args.status:
+        nib.save(nib.Nifti1Image(fit_result.status, affine), args.status)
+    if args.params:
+        nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
