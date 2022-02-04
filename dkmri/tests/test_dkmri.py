@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.testing as npt
 
-from .. import dkmri
+import dkmri
 
 
 SEED = 123
@@ -188,6 +188,12 @@ def test_params_to_rd():
     npt.assert_almost_equal(rd, desired_rd)
 
 
+def test_params_to_fa():
+    desired_fa = 0.4425100287524919
+    fa = dkmri.params_to_fa(params)
+    npt.assert_almost_equal(fa, desired_fa)
+
+
 def test__akc():
     np.random.seed(SEED)
     D = dkmri.params_to_D(params)
@@ -223,3 +229,8 @@ def test_params_to_rk():
     rk = dkmri.params_to_rk(params)
     npt.assert_almost_equal(rk, desired_rk)
 
+
+def test__mtk():
+    desired_mtk = 1.0387297963232285
+    mtk = dkmri._mtk(params)
+    npt.assert_almost_equal(mtk, desired_mtk)
