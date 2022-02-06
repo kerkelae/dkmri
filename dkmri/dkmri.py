@@ -1319,6 +1319,10 @@ if __name__ == "__main__":
         "-params",
         help="path of a NIfTI file in which to save the estimated parameters",
     )
+    parser.add_argument(
+        "-params_nlls",
+        help="path of a NIfTI file in which to save the parameters estimated with standard NLLS",
+    )
     args = parser.parse_args()
 
     data_img = nib.load(args.data)
@@ -1375,3 +1379,5 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(fit_result.status, affine), args.status)
     if args.params:
         nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
+    if args.params_nlls:
+        nib.save(nib.Nifti1Image(fit_result.params_nlls, affine), args.params_nlls)
