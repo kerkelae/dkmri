@@ -1321,7 +1321,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-params_nlls",
-        help="path of a NIfTI file in which to save the parameters estimated with standard NLLS",
+        help="path of a NIfTI file in which to save the parameters computed with standard NLLS",
+    )
+    parser.add_argument(
+        "-mk_nlls",
+        help="path of a NIfTI file in which to save the mean kurtosis map computed with standard NLLS",
     )
     args = parser.parse_args()
 
@@ -1381,3 +1385,7 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
     if args.params_nlls:
         nib.save(nib.Nifti1Image(fit_result.params_nlls, affine), args.params_nlls)
+    if args.mk_nlls:
+        nib.save(
+            nib.Nifti1Image(params_to_mk(fit_result.params_nlls), affine), args.mk_nlls
+        )
