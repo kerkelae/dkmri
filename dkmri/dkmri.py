@@ -17,7 +17,7 @@ from sklearn.neural_network import MLPRegressor
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
 
-# Hard-coded lower and upper limit for kurtosis
+# Hard-coded lower and upper limit for kurtosis in prediction step
 MIN_K = -3 / 7
 MAX_K = 10
 
