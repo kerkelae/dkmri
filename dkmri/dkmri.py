@@ -1327,6 +1327,9 @@ if __name__ == "__main__":
         "-mk_nlls",
         help="path of a NIfTI file in which to save the mean kurtosis map computed with standard NLLS",
     )
+    parser.add_argument(
+        "-akc_mask", help="path of a NIfTI file in which to save the AKC mask",
+    )
     args = parser.parse_args()
 
     data_img = nib.load(args.data)
@@ -1388,4 +1391,8 @@ if __name__ == "__main__":
     if args.mk_nlls:
         nib.save(
             nib.Nifti1Image(params_to_mk(fit_result.params_nlls), affine), args.mk_nlls
+        )
+    if args.akc_mask:
+        nib.save(
+            nib.Nifti1Image(fit_result.akc_mask.astype(float), affine), args.akc_mask
         )
