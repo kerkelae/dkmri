@@ -1330,6 +1330,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "-akc_mask", help="path of a NIfTI file in which to save the AKC mask",
     )
+    parser.add_argument(
+        "-alpha", help="value of the constant controlling regularization magnitude",
+    )
     args = parser.parse_args()
 
     data_img = nib.load(args.data)
@@ -1343,8 +1346,12 @@ if __name__ == "__main__":
         mask = nib.load(args.mask).get_fdata().astype(bool)
     else:
         mask = None
+    if args.alpha:
+        alpha = float(args.alpha)
+    else:
+        alpha = None
 
-    fit_result = fit(data, bvals, bvecs, mask)
+    fit_result = fit(data, bvals, bvecs, mask, alpha)
 
     if args.md:
         nib.save(
