@@ -1251,8 +1251,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description=(
-            """Estimate diffusion kurtosis imaging parameters and compute parameter maps.
-            The command for using dkmri.py is "dkmri.py data bvals bvecs
+            """Estimate diffusion kurtosis imaging parameters and compute parameter
+            maps. The command for using dkmri.py is "dkmri.py data bvals bvecs
             optional-arguments", where data, bvals, and bvecs are the paths of the files
             containing the diffusion-weighted data, b-values, and b-vectors, and
             optional-arguments is where to define things such as which parameter maps to
@@ -1271,8 +1271,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "-mask",
         help=(
-            "path of a NIfTI file with a mask definining where to estimate parameters"
+            "path of a NIfTI file with a binary mask definining where to estimate"
+            + " parameters"
         ),
+    )
+    parser.add_argument(
+        "-alpha",
+        help="value of the constant controlling regularization magnitude"
+        + " (default values is 0.1 * MSE_NLLS / MSE_MK)",
+    )
+    parser.add_argument(
+        "-params",
+        help="path of a NIfTI file in which to save the estimated parameters",
     )
     parser.add_argument(
         "-md", help="path of a NIfTI file in which to save the mean diffusivity map"
@@ -1316,22 +1326,18 @@ if __name__ == "__main__":
         help="path of a NIfTI file in which to save the codes returned by the optimizer",
     )
     parser.add_argument(
-        "-params",
-        help="path of a NIfTI file in which to save the estimated parameters",
-    )
-    parser.add_argument(
         "-params_nlls",
-        help="path of a NIfTI file in which to save the parameters computed with standard NLLS",
+        help=(
+            "path of a NIfTI file in which to save the parameter estimates computed"
+            + " with standard NLLS"
+        ),
     )
     parser.add_argument(
-        "-mk_nlls",
-        help="path of a NIfTI file in which to save the mean kurtosis map computed with standard NLLS",
-    )
-    parser.add_argument(
-        "-akc_mask", help="path of a NIfTI file in which to save the AKC mask",
-    )
-    parser.add_argument(
-        "-alpha", help="value of the constant controlling regularization magnitude",
+        "-akc_mask",
+        help=(
+            "path of a NIfTI file in which to save the mask defining the voxels where"
+            + " the NLLS fit was considered successful"
+        ),
     )
     args = parser.parse_args()
 
