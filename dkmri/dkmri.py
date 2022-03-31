@@ -11,6 +11,7 @@ from jax.scipy.optimize import minimize
 import nibabel as nib
 import numba
 import numpy as np
+from sklearn.metrics import r2_score
 from sklearn.neural_network import MLPRegressor
 
 
@@ -1169,20 +1170,26 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     params_nlls = _nlls_fit(data, X, mask)
 
     if not quiet:
-        print("Training neural networks to predict kurtosis maps")
+        print("Training a neural network to predict kurtosis maps")
     akc_mask = _akc_mask(params_to_W(params_nlls), _45_dirs, mask).astype(bool)
     mk = np.clip(np.nan_to_num(params_to_mk(params_nlls, mask)), MIN_K, MAX_K)
-    mk_pred, R2 = _predict(data, mk, akc_mask, seed, mask)
-    if not quiet:
-        print(f"R^2 = {np.round(R2, 5)} for MK")
     ak = np.clip(np.nan_to_num(params_to_ak(params_nlls, mask)), MIN_K, MAX_K)
-    ak_pred, R2 = _predict(data, ak, akc_mask, seed, mask)
-    if not quiet:
-        print(f"R^2 = {np.round(R2, 5)} for AK")
     rk = np.clip(np.nan_to_num(params_to_rk(params_nlls, mask)), MIN_K, MAX_K)
-    rk_pred, R2 = _predict(data, rk, akc_mask, seed, mask)
+    reg = MLPRegressor(
+        hidden_layer_sizes=(50, 50, 50), max_iter=int(1e3), random_state=seed,
+    ).fit(data[akc_mask], np.vstack((mk[akc_mask], ak[akc_mask], rk[akc_mask])).T)
     if not quiet:
-        print(f"R^2 = {np.round(R2, 5)} for RK")
+        y_pred = reg.predict(data[akc_mask])
+        print(f"R^2 = {np.round(r2_score(mk[akc_mask], y_pred[:, 0]), 5)} for MK")
+        print(f"R^2 = {np.round(r2_score(ak[akc_mask], y_pred[:, 1]), 5)} for AK")
+        print(f"R^2 = {np.round(r2_score(rk[akc_mask], y_pred[:, 2]), 5)} for RK")
+    y_pred = reg.predict(data[mask])
+    mk_pred = np.zeros(mask.shape)
+    mk_pred[mask] = y_pred[:, 0]
+    ak_pred = np.zeros(mask.shape)
+    ak_pred[mask] = y_pred[:, 1]
+    rk_pred = np.zeros(mask.shape)
+    rk_pred[mask] = y_pred[:, 2]
 
     if not quiet:
         print("Calculating initial positions")
@@ -1202,7 +1209,11 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
     S0 = np.exp(params_nlls[..., 0])
     D = params_to_D(params_nlls)
     mtk = np.clip(np.nan_to_num(_mtk(params_nlls, mask)), MIN_K, MAX_K)
-    mtk_pred, _ = _predict(data, mtk, akc_mask, seed, mask)
+    reg = MLPRegressor(
+        hidden_layer_sizes=(20, 20), max_iter=int(1e3), random_state=seed,
+    ).fit(data[akc_mask], mtk[akc_mask])
+    mtk_pred = np.zeros(mask.shape)
+    mtk_pred[mask] = reg.predict(data[mask])
     x0 = _calculate_x0(S0, D, mtk_pred, ak_pred, rk_pred, mask)
 
     if not quiet:
@@ -1339,6 +1350,12 @@ if __name__ == "__main__":
             + " the NLLS fit was considered successful"
         ),
     )
+    parser.add_argument(
+        "-x0",
+        help=(
+            "path of a NIfTI file in which to save the initial positions"
+        ),
+    )
     args = parser.parse_args()
 
     data_img = nib.load(args.data)
@@ -1401,11 +1418,11 @@ if __name__ == "__main__":
         nib.save(nib.Nifti1Image(fit_result.params, affine), args.params)
     if args.params_nlls:
         nib.save(nib.Nifti1Image(fit_result.params_nlls, affine), args.params_nlls)
-    if args.mk_nlls:
-        nib.save(
-            nib.Nifti1Image(params_to_mk(fit_result.params_nlls), affine), args.mk_nlls
-        )
     if args.akc_mask:
         nib.save(
             nib.Nifti1Image(fit_result.akc_mask.astype(float), affine), args.akc_mask
+        )
+    if args.x0:
+        nib.save(
+            nib.Nifti1Image(fit_result.x0, affine), args.x0
         )
