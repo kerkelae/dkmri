@@ -1,5 +1,5 @@
 # Data for example notebook
-docs/data.*
+docs/dwi.*
 docs/mask.nii.gz
 *.nii.gz
 *.nii
