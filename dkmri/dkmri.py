@@ -1115,7 +1115,7 @@ def fit(data, bvals, bvecs, mask=None, alpha=None, seed=123, quiet=False):
         1. Remove infinities, nans, and negative values in `data`, and scale
            values in `data` and `bvals`.
         2. Estimate model parameters using standard NLLS.
-        3. Train multilayer perceptrons to predict kurtosis measures from data
+        3. Train a multilayer perceptron to predict kurtosis measures from data
            in voxels where the apparent kurtosis coefficient computed from the
            NLLS fit results is non-negative along all directions.
         4. Estimate model parameters using regularized NLLS where the
