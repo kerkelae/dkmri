@@ -1,6 +1,6 @@
 # `dkmri.py`
 
-`dkmri.py` stands for diffusion kurtosis magnetic resonance imaging in Python. It is a Python package for estimating diffusion and kurtosis tensors from diffusion-weighted magnetic resonance data. The estimation is performed using regularized non-linear optimization informed by fully-connected feed-forward neural networks that are trained to learn the mapping from data to kurtosis metrics. Details can be found in the [arXiv preprint](https://arxiv.org/abs/2203.07327) and [source code](https://github.com/kerkelae/dkmri/blob/main/dkmri/dkmri.py).
+`dkmri.py` stands for diffusion kurtosis magnetic resonance imaging in Python. It is a Python package for estimating diffusion and kurtosis tensors from diffusion-weighted magnetic resonance data. The estimation is performed using regularized non-linear optimization informed by a fully-connected feed-forward neural network that is trained to learn the mapping from data to kurtosis metrics. Details can be found in the [arXiv preprint](https://arxiv.org/abs/2203.07327) and [source code](https://github.com/kerkelae/dkmri/blob/main/dkmri/dkmri.py).
 
 This software can be used from the command line or in a Python interpreter.
 
