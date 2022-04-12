@@ -705,41 +705,6 @@ def _akc_mask(W, vs, mask):
     return akc_mask
 
 
-def _predict(data, m, akc_mask, seed, mask=None):
-    """Train a multilayer perceptron to predict `m` from `data`.
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Floating-point array with shape (..., number of acquisitions).
-    m : numpy.ndarray
-        Floating-point array.
-    akc_mask : numpy.ndarray
-        Boolean array.
-    seed : int
-        Seed for pseudo-random number generation to initialize neural network
-        weights.
-    mask : numpy.ndarray, optional
-        Boolean array.
-
-    Returns
-    -------
-    mk_pred : np.ndarray
-    R2 : float
-    """
-    if mask is None:
-        mask = np.ones(data.shape[0:-1]).astype(bool)
-    X = data[akc_mask]
-    y = m[akc_mask]
-    reg = MLPRegressor(
-        hidden_layer_sizes=(20, 20), max_iter=int(1e3), random_state=seed,
-    ).fit(X, y)
-    R2 = reg.score(X, y)
-    m_pred = np.zeros(mask.shape)
-    m_pred[mask] = reg.predict(data[mask])
-    return m_pred, R2
-
-
 def signal(params, design_matrix, mask=None):
     """Predict signal from model parameters.
 

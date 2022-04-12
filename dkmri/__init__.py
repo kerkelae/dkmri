@@ -16,7 +16,6 @@ from .dkmri import (
     _ols_fit,
     _nlls_fit,
     _akc_mask,
-    _predict,
     _calculate_x0,
     _reg_nlls_fit,
 )
