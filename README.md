@@ -1,3 +1,5 @@
+> 💡 It is recommended to use [non-negativity constrained](https://doi.org/10.1016/j.neuroimage.2019.116405) diffusion kurtosis imaging available in, for example, [DIPY](https://github.com/dipy/dipy).
+
 # `dkmri.py`
 
 `dkmri.py` stands for diffusion kurtosis magnetic resonance imaging in Python. It is a Python package for estimating diffusion and kurtosis tensors from diffusion-weighted magnetic resonance data. The estimation is performed using regularized non-linear optimization informed by a fully-connected feed-forward neural network that is trained to learn the mapping from data to kurtosis metrics. Details can be found in the [arXiv preprint](https://arxiv.org/abs/2203.07327) and [source code](https://github.com/kerkelae/dkmri/blob/main/dkmri/dkmri.py).
