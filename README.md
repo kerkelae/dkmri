@@ -1,4 +1,4 @@
-> 💡 It is recommended to use [non-negativity constrained](https://doi.org/10.1016/j.neuroimage.2019.116405) diffusion kurtosis imaging available in, for example, [DIPY](https://github.com/dipy/dipy).
+> 💡 Instead of the code in this repository, it is recommended to use the [non-negativity-constrained](https://doi.org/10.1016/j.neuroimage.2019.116405) diffusion kurtosis imaging available in, for example, [DIPY](https://github.com/dipy/dipy).
 
 # `dkmri.py`
 
